@@ -1,0 +1,27 @@
+# 账号和登录会话（明文密码）—— 绝不入库
+bb_config.json
+bb_session.json
+*.session.json
+
+# 下载下来的课程文件
+Blackboard_download/
+
+# 构建产物
+build/
+dist/
+*.spec.bak
+__pycache__/
+*.pyc
+*.pyo
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 系统和编辑器
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

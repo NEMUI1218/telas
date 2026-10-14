@@ -1,0 +1,59 @@
+# 自动打包 Windows 和 macOS 版。
+#
+# - 在 GitHub 网页的 Actions 页面手动运行（Run workflow）：打好的包在这次运行的 Artifacts 里下载。
+# - 推送 v 开头的标签（例如 git tag v1.0.0 && git push origin v1.0.0）：
+#   除了 Artifacts，还会自动建一个 Release，把两个 zip 挂上去。
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: BlackboardTool-windows
+          - os: macos-latest          # Apple 芯片（M1 及以后）的 Mac
+            artifact: BlackboardTool-macos
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build
+        run: python -m PyInstaller BlackboardTool.spec --noconfirm --clean
+
+      - name: Zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/BlackboardTool.exe -DestinationPath ${{ matrix.artifact }}.zip
+
+      - name: Zip (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/BlackboardTool.app ${{ matrix.artifact }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact }}.zip
