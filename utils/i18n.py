@@ -1,200 +1,230 @@
-"""多语言文案与 i18n 封装。"""
+"""显示当前课程的 Blackboard 测验及其课时分类。"""
 
-L = {
-    "ja": {
-        "window_title": "Blackboard ツール",
-        "username": "ユーザー名:",
-        "password": "パスワード:",
-        "login_btn": "ログイン",
-        "login_busy": "ログイン中...",
-        "logged_in": "ログイン済み",
-        "logged_out": "未ログイン",
-        "switch_account": "アカウント切替",
-        "switch_confirm": "現在のアカウントからログアウトし、このパソコンに保存されたパスワードを削除します。続けますか?",
-        "switched_out": "ログアウトしました。ユーザー名とパスワードを入力してログインしてください",
-        "course": "コース:",
-        "prefix_filter": "学期:",
-        "course_name": "コース:",
-        "all_terms": "すべての学期",
-        "other_term": "——",
-        "tab_download": "ファイルダウンロード",
-        "tab_quiz": "テスト",
-        "tab_settings": "設定",
-        "appearance": "外観",
-        "clear_log": "ログをクリア",
-        "status_ready": "準備完了",
-        "enter_credentials": "ユーザー名とパスワードを入力してログインしてください",
-        "session_restoring": "セッションを復元中...",
-        "session_ok": "セッション有効、自動ログイン成功!",
-        "session_expired": "セッション期限切れ、再ログイン中...",
-        "login_ok": "ログイン成功!",
-        "login_fail": "ログイン失敗!",
-        "courses_count": "全 {0} コース",
-        "save_group": "保存設定",
-        "browse": "参照",
-        "browse_title": "保存先を選択",
-        "scan_files": "ファイルスキャン",
-        "download_selected": "選択をダウンロード",
-        "select_all": "すべて選択",
-        "col_name": "名称",
-        "col_type": "種類",
-        "col_url": "URL",
-        "type_lesson": "授業",
-        "type_other": "その他",
-        "type_folder": "フォルダー",
-        "type_file": "ファイル",
-        "no_path": "保存先を設定してください",
-        "no_selection": "選択されていません",
-        "download_start": "{0} ファイルのダウンロードを開始...",
-        "download_progress": "[{0}/{1}] {2} bytes -> {3}",
-        "download_done": "すべて完了",
-        "confirm_title": "確認",
-        "select_course_first": "先にコースを選択してください",
-        "scanning_files": "ファイル構造をスキャン中...",
-        "scan_done": "スキャン完了、全 {0} ファイル",
-        "lang_label": "言語:",
-        "theme_label": "テーマ:",
-        "theme_dark": "ダーク",
-        "theme_light": "ライト",
-        "placeholder_course": "コースを選択...",
-        "log_hide": "ログを隠す",
-        "log_show": "ログを表示",
-        "empty_state": "コースを選択してスキャンを開始",
-        "progress_format": "{0}/{1} ファイル {2}",
-    },
-    "en": {
-        "window_title": "Blackboard Tool",
-        "username": "Username:",
-        "password": "Password:",
-        "login_btn": "Login",
-        "login_busy": "Logging in...",
-        "logged_in": "Logged in",
-        "logged_out": "Not logged in",
-        "switch_account": "Switch account",
-        "switch_confirm": "This will log out the current account and remove the password saved on this computer. Continue?",
-        "switched_out": "Logged out. Enter your username and password to log in",
-        "course": "Course:",
-        "prefix_filter": "Term:",
-        "course_name": "Course:",
-        "all_terms": "All terms",
-        "other_term": "——",
-        "tab_download": "File Download",
-        "tab_quiz": "Quizzes",
-        "tab_settings": "Settings",
-        "appearance": "Appearance",
-        "clear_log": "Clear Log",
-        "status_ready": "Ready",
-        "enter_credentials": "Please enter username and password to login",
-        "session_restoring": "Restoring session...",
-        "session_ok": "Session valid, auto-login success!",
-        "session_expired": "Session expired, re-logging in...",
-        "login_ok": "Login successful!",
-        "login_fail": "Login failed!",
-        "courses_count": "{0} courses total",
-        "save_group": "Save Settings",
-        "browse": "Browse",
-        "browse_title": "Select save directory",
-        "scan_files": "Scan Files",
-        "download_selected": "Download Selected",
-        "select_all": "Select All",
-        "col_name": "Name",
-        "col_type": "Type",
-        "col_url": "URL",
-        "type_lesson": "Lesson",
-        "type_other": "Other",
-        "type_folder": "Folder",
-        "type_file": "File",
-        "no_path": "Please set save path",
-        "no_selection": "No selection",
-        "download_start": "Starting download of {0} files...",
-        "download_progress": "[{0}/{1}] {2} bytes -> {3}",
-        "download_done": "All done",
-        "confirm_title": "Confirm",
-        "select_course_first": "Please select a course first",
-        "scanning_files": "Scanning file structure...",
-        "scan_done": "Scan complete, {0} files total",
-        "lang_label": "Language:",
-        "theme_label": "Theme:",
-        "theme_dark": "Dark",
-        "theme_light": "Light",
-        "placeholder_course": "Select course...",
-        "log_hide": "Hide Log",
-        "log_show": "Show Log",
-        "empty_state": "Select course and click Scan to begin",
-        "progress_format": "{0}/{1} files {2}",
-    },
-    "zh": {
-        "window_title": "Blackboard 工具箱",
-        "username": "用户名:",
-        "password": "密码:",
-        "login_btn": "登 录",
-        "login_busy": "登录中...",
-        "logged_in": "已登录",
-        "logged_out": "未登录",
-        "switch_account": "切换账号",
-        "switch_confirm": "将退出当前账号，并删除这台电脑上保存的密码。继续吗？",
-        "switched_out": "已退出，请输入用户名和密码登录",
-        "course": "课程:",
-        "prefix_filter": "学期:",
-        "course_name": "课程:",
-        "all_terms": "全部学期",
-        "other_term": "——",
-        "tab_download": "文件下载",
-        "tab_quiz": "测验识别",
-        "tab_settings": "设置",
-        "appearance": "外观",
-        "clear_log": "清除日志",
-        "status_ready": "就绪",
-        "enter_credentials": "请输入用户名和密码后点击登录",
-        "session_restoring": "尝试恢复会话...",
-        "session_ok": "会话有效，自动登录成功!",
-        "session_expired": "会话已过期，重新登录...",
-        "login_ok": "登录成功!",
-        "login_fail": "登录失败！",
-        "courses_count": "共 {0} 个课程",
-        "save_group": "保存设置",
-        "browse": "浏览",
-        "browse_title": "选择保存路径",
-        "scan_files": "扫描文件",
-        "download_selected": "下载选中",
-        "select_all": "全选",
-        "col_name": "名称",
-        "col_type": "类型",
-        "col_url": "URL",
-        "type_lesson": "课时",
-        "type_other": "其他",
-        "type_folder": "文件夹",
-        "type_file": "文件",
-        "no_path": "请设置保存路径",
-        "no_selection": "没有选中任何文件",
-        "download_start": "开始下载 {0} 个文件...",
-        "download_progress": "[{0}/{1}] 下载 {2} bytes -> {3}",
-        "download_done": "全部完成",
-        "confirm_title": "确认",
-        "select_course_first": "请先选择课程",
-        "scanning_files": "正在扫描文件结构...",
-        "scan_done": "扫描完成，共 {0} 个文件",
-        "lang_label": "语言:",
-        "theme_label": "主题:",
-        "theme_dark": "深色",
-        "theme_light": "浅色",
-        "placeholder_course": "请选择你的课程",
-        "log_hide": "隐藏日志",
-        "log_show": "显示日志",
-        "empty_state": "选择课程后点击扫描",
-        "progress_format": "{0}/{1} 个文件 {2}",
-    },
-}
+import html
+import threading
+
+from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QHeaderView,
+)
 
 
-class I18n:
-    def __init__(self, lang="zh"):
-        self.lang = lang if lang in L else "zh"
+class _QuizLoadSignals(QObject):
+    finished = Signal(str, object, int, int)
 
-    def set_lang(self, lang):
-        if lang in L:
-            self.lang = lang
 
-    def tr(self, key, *args):
-        t = L.get(self.lang, L["zh"]).get(key, key)
-        return t.format(*args) if args else t
+class QuizPage(QWidget):
+    def __init__(self, ctx):
+        super().__init__()
+        self.ctx = ctx
+        self._has_loaded = False
+        self._request_id = 0
+        self._signals = _QuizLoadSignals(self)
+        self._signals.finished.connect(self._on_quizzes_loaded)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        self.title_label = QLabel()
+        self.title_label.setObjectName("pageTitle")
+        layout.addWidget(self.title_label)
+
+        toolbar = QHBoxLayout()
+        self.status_label = QLabel()
+        toolbar.addWidget(self.status_label)
+        toolbar.addStretch()
+
+        self.refresh_btn = QPushButton()
+        self.refresh_btn.clicked.connect(self.refresh_quizzes)
+        toolbar.addWidget(self.refresh_btn)
+        layout.addLayout(toolbar)
+
+        self.quiz_tree = QTreeWidget()
+        self.quiz_tree.setColumnCount(3)
+        self.quiz_tree.setAlternatingRowColors(True)
+        self.quiz_tree.setIndentation(22)
+        self.quiz_tree.header().setStretchLastSection(False)
+        self.quiz_tree.header().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        self.quiz_tree.header().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.quiz_tree.header().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
+        )
+        layout.addWidget(self.quiz_tree, 1)
+
+        self.ctx.signals.course_changed.connect(self.on_course_changed)
+        self.ctx.signals.login_state.connect(self._on_login_state)
+        self.ctx.signals.language_changed.connect(self.retranslate)
+        self.retranslate()
+
+    def retranslate(self):
+        self.title_label.setText(self.ctx.tr("tab_quiz"))
+        self.refresh_btn.setText(self.ctx.tr("refresh"))
+        self.quiz_tree.setHeaderLabels([
+            self.ctx.tr("quiz_col_name"),
+            self.ctx.tr("col_type"),
+            self.ctx.tr("col_url"),
+        ])
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._has_loaded:
+            self.refresh_quizzes()
+
+    def _on_login_state(self, logged_in):
+        if logged_in:
+            self._has_loaded = False
+
+    def on_course_changed(self, _course_id, _course_name):
+        self.refresh_quizzes()
+
+    def refresh_quizzes(self):
+        self._has_loaded = True
+        self._request_id += 1
+        request_id = self._request_id
+        self.quiz_tree.clear()
+
+        course_id = str(self.ctx.current_course_id or "")
+        if not course_id:
+            self.status_label.setText(self.ctx.tr("select_course_first"))
+            return
+
+        self.status_label.setText(self.ctx.tr("quiz_loading"))
+        self.refresh_btn.setEnabled(False)
+        epoch = self.ctx.account_epoch
+        threading.Thread(
+            target=self._load_quizzes,
+            args=(course_id, request_id, epoch),
+            daemon=True,
+        ).start()
+
+    def _load_quizzes(self, course_id, request_id, epoch):
+        try:
+            quizzes = self.ctx.api.get_course_quizzes(
+                course_id,
+                include_folders=True,
+            )
+        except Exception as exc:
+            quizzes = {"error": str(exc)}
+        self._signals.finished.emit(course_id, quizzes, request_id, epoch)
+
+    def _on_quizzes_loaded(self, course_id, quizzes, request_id, epoch):
+        if request_id != self._request_id:
+            return
+        if epoch != self.ctx.account_epoch:
+            return
+        if course_id != str(self.ctx.current_course_id or ""):
+            return
+
+        self.refresh_btn.setEnabled(True)
+        self.quiz_tree.clear()
+        if quizzes is None or not isinstance(quizzes, dict):
+            self.status_label.setText(self.ctx.tr("quiz_load_failed"))
+            return
+
+        if "error" in quizzes:
+            self.status_label.setText(
+                self.ctx.tr("quiz_load_error", quizzes["error"])
+            )
+            return
+
+        quiz_list = quizzes.get("quizzes", [])
+        folder_list = quizzes.get("folders", [])
+
+        lessons = {}
+
+        def ensure_lesson(path, url=""):
+            if not path:
+                return None
+
+            lesson_name = path[0]
+            if lesson_name not in lessons:
+                lesson_item = QTreeWidgetItem([
+                    lesson_name,
+                    self.ctx.tr("type_lesson"),
+                ])
+                lesson_item.setData(
+                    0,
+                    Qt.ItemDataRole.UserRole,
+                    {"path": [lesson_name]},
+                )
+                self.quiz_tree.addTopLevelItem(lesson_item)
+                lessons[lesson_name] = lesson_item
+
+            lesson_item = lessons[lesson_name]
+            if url:
+                self._set_url_cell(lesson_item, url)
+            return lesson_item
+
+        # 只把课程目录下的第一层文件夹作为课时显示。
+        # 更深层的资料文件夹由文件下载页展示。
+        for folder in folder_list:
+            path = folder.get("path", [])
+            if len(path) == 1:
+                ensure_lesson(path, folder.get("url", ""))
+
+        for quiz in quiz_list:
+            parent = ensure_lesson(quiz.get("path", []))
+            quiz_item = QTreeWidgetItem([
+                quiz.get("title") or self.ctx.tr("unnamed_quiz"),
+                self.ctx.tr("quiz_type"),
+            ])
+            quiz_item.setData(
+                0,
+                Qt.ItemDataRole.UserRole,
+                quiz.get("id", ""),
+            )
+            self._set_url_cell(quiz_item, quiz.get("url", ""))
+
+            if parent is None:
+                self.quiz_tree.addTopLevelItem(quiz_item)
+            else:
+                parent.addChild(quiz_item)
+
+        for lesson_name, lesson_item in lessons.items():
+            has_quiz = any(
+                quiz.get("path")
+                and quiz["path"][0] == lesson_name
+                for quiz in quiz_list
+            )
+            if not has_quiz:
+                lesson_item.addChild(
+                    QTreeWidgetItem([
+                        self.ctx.tr("no_quiz_for_lesson"),
+                        "",
+                    ])
+                )
+            lesson_item.setExpanded(True)
+
+        if quiz_list:
+            self.status_label.setText(
+                self.ctx.tr("quiz_scan_done", len(quiz_list))
+            )
+        else:
+            self.status_label.setText(self.ctx.tr("quiz_scan_empty"))
+
+    def _set_url_cell(self, item, url):
+        if not url:
+            return
+
+        safe_url = html.escape(url, quote=True)
+        link_label = QLabel(
+            f'<a href="{safe_url}">{html.escape(url)}</a>'
+        )
+        link_label.setTextFormat(Qt.TextFormat.RichText)
+        link_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+        )
+        link_label.setOpenExternalLinks(True)
+        link_label.setToolTip(url)
+        self.quiz_tree.setItemWidget(item, 2, link_label)
