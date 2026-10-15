@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 
 class DownloadPage(QWidget):
+    _CHECK_STATE_ROLE = Qt.ItemDataRole.UserRole + 3
     def __init__(self, ctx, parent=None):
         super().__init__(parent)
         self.ctx = ctx
@@ -211,6 +212,7 @@ class DownloadPage(QWidget):
             item = QTreeWidgetItem()
             item.setCheckState(0, Qt.CheckState.Unchecked)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsAutoTristate)
+            self._set_item_check_state(item, Qt.CheckState.Unchecked)
             # 勾选框由名称单元格中的 QCheckBox 绘制；树项目只保存状态，
             # 避免 Qt 再绘制一套原生复选框。
             item.setFlags(
@@ -246,6 +248,7 @@ class DownloadPage(QWidget):
         # 半选状态由树同步设置；点击时仍按普通两态复选框切换。
         checkbox.setTristate(False)
         checkbox.setCheckState(item.checkState(0))
+        checkbox.setCheckState(self._item_check_state(item))
         checkbox.stateChanged.connect(
             lambda state, current=item: self._on_item_checkbox_changed(
                 current, state
@@ -278,12 +281,14 @@ class DownloadPage(QWidget):
         check_state = Qt.CheckState(state)
         self.file_tree.blockSignals(True)
         item.setCheckState(0, check_state)
+        self._set_item_check_state(item, check_state)
 
         if check_state != Qt.CheckState.PartiallyChecked:
             def set_descendants(parent):
                 for index in range(parent.childCount()):
                     child = parent.child(index)
                     child.setCheckState(0, check_state)
+                    self._set_item_check_state(child, check_state)
                     set_descendants(child)
 
             set_descendants(item)
@@ -300,6 +305,7 @@ class DownloadPage(QWidget):
             if checkbox:
                 checkbox.blockSignals(True)
                 checkbox.setCheckState(item.checkState(0))
+                checkbox.setCheckState(self._item_check_state(item))
                 checkbox.blockSignals(False)
             for index in range(item.childCount()):
                 sync(item.child(index))
@@ -325,17 +331,28 @@ class DownloadPage(QWidget):
         total = parent.childCount()
         for i in range(total):
             state = parent.child(i).checkState(0)
+            state = self._item_check_state(parent.child(i))
             if state == Qt.CheckState.Checked:
                 checked += 1
             elif state == Qt.CheckState.PartiallyChecked:
                 partial += 1
         if checked == total:
             parent.setCheckState(0, Qt.CheckState.Checked)
+            self._set_item_check_state(parent, Qt.CheckState.Checked)
         elif checked == 0 and partial == 0:
             parent.setCheckState(0, Qt.CheckState.Unchecked)
+            self._set_item_check_state(parent, Qt.CheckState.Unchecked)
         else:
             parent.setCheckState(0, Qt.PartiallyChecked)
+            self._set_item_check_state(parent, Qt.CheckState.PartiallyChecked)
         self._update_parent_state(parent)
+
+    def _item_check_state(self, item):
+        value = item.data(0, self._CHECK_STATE_ROLE)
+        return Qt.CheckState(value if value is not None else 0)
+
+    def _set_item_check_state(self, item, state):
+        item.setData(0, self._CHECK_STATE_ROLE, int(state.value))
 
     def _update_select_all_state(self):
         top_count = self.file_tree.topLevelItemCount()
@@ -344,6 +361,7 @@ class DownloadPage(QWidget):
         checked = 0
         for i in range(top_count):
             if self.file_tree.topLevelItem(i).checkState(0) == Qt.CheckState.Checked:
+            if self._item_check_state(self.file_tree.topLevelItem(i)) == Qt.CheckState.Checked:
                 checked += 1
         self.select_all_cb.blockSignals(True)
         if checked == 0:
@@ -365,6 +383,7 @@ class DownloadPage(QWidget):
         check_state = Qt.CheckState.Checked if state == 2 else Qt.CheckState.Unchecked
         def set_descendants(item):
             item.setCheckState(0, check_state)
+            self._set_item_check_state(item, check_state)
             for index in range(item.childCount()):
                 set_descendants(item.child(index))
 
@@ -383,6 +402,7 @@ class DownloadPage(QWidget):
         if item.childCount() == 0:
             if (
                 item.checkState(0) == Qt.CheckState.Checked
+                self._item_check_state(item) == Qt.CheckState.Checked
                 and item.data(0, Qt.ItemDataRole.UserRole + 1) == "file"
             ):
                 url = item.data(0, Qt.ItemDataRole.UserRole)
