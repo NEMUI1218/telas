@@ -25,6 +25,9 @@ class MainWindow(QMainWindow):
         self._log_visible = False
         # 先套主题再建界面：侧栏图标是按当前主题的颜色画的
         apply_theme(QApplication.instance(), self.ctx.settings.get("theme", "dark"))
+        QApplication.instance().styleHints().colorSchemeChanged.connect(
+            self._on_system_color_scheme_changed
+        )
         self._build_ui()
         self._connect_signals()
         self._retranslate_all()
@@ -35,6 +38,11 @@ class MainWindow(QMainWindow):
 
     def tr(self, key, *args):
         return self.ctx.tr(key, *args)
+
+    def _on_system_color_scheme_changed(self, _scheme):
+        if self.ctx.settings.get("theme", "dark") == "system":
+            apply_theme(QApplication.instance(), "system")
+            self.ctx.signals.theme_changed.emit()
 
     # ------------------------------------------------------------- 构建
     def _build_ui(self):
@@ -90,10 +98,7 @@ class MainWindow(QMainWindow):
         self.status_label.setObjectName("status_text")
         self.status_label.setTextFormat(Qt.TextFormat.PlainText)
         # 宽度忽略内容：再长的消息也只是被裁掉，不会把窗口撑宽
-        self.status_label.setSizePolicy(
-            QSizePolicy.Policy.Ignored,
-            QSizePolicy.Policy.Preferred,
-        )
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         top_row.addWidget(self.status_label, 1)
 
         self.clear_log_btn = QPushButton()
@@ -167,7 +172,7 @@ class MainWindow(QMainWindow):
         if 0 <= idx < len(pages):
             self.stack.setCurrentWidget(pages[idx])
             self.sidebar.group.button(idx).setChecked(True)
-
+            
     # ------------------------------------------------------------- 通用信号处理
     def _append_log(self, text):
         self.log_area.append(text)
@@ -224,10 +229,7 @@ class MainWindow(QMainWindow):
         self.log_area.setVisible(self._log_visible)
         self.clear_log_btn.setVisible(self._log_visible)
         self.log_toggle_btn.setText(
-            "▾  " + self.tr("log_hide")
-            if self._log_visible
-            else "▸  " + self.tr("log_show")
-        )
+            "▾  " + self.tr("log_hide") if self._log_visible else "▸  " + self.tr("log_show"))
 
     # ------------------------------------------------------------- 轻提示
     def _show_toast(self, text, kind="info"):
@@ -268,14 +270,8 @@ class MainWindow(QMainWindow):
         self._apply_log_visible()
 
     def _save_state(self):
-        self.ctx.settings.set(
-            "win_geo",
-            bytes(self.saveGeometry().toBase64()).decode(),
-        )
-        self.ctx.settings.set(
-            "log_visible",
-            "1" if self._log_visible else "0",
-        )
+        self.ctx.settings.set("win_geo", bytes(self.saveGeometry().toBase64()).decode())
+        self.ctx.settings.set("log_visible", "1" if self._log_visible else "0")
         self.ctx.settings.save()
 
     def closeEvent(self, event):
@@ -293,11 +289,7 @@ class MainWindow(QMainWindow):
 
     def _run_login(self, user, pwd):
         self.header.set_login_busy(True)
-        threading.Thread(
-            target=self._login_thread,
-            args=(user, pwd),
-            daemon=True,
-        ).start()
+        threading.Thread(target=self._login_thread, args=(user, pwd), daemon=True).start()
 
     def _login_thread(self, user, pwd):
         try:
@@ -335,21 +327,13 @@ class MainWindow(QMainWindow):
         name = ""
         if me:
             name = " ".join(
-                str(p)
-                for p in (me.get("familyName"), me.get("givenName"))
-                if p
-            )
-        self.ctx.signals.account_info.emit(
-            name,
-            self.ctx.settings.get("user", ""),
-        )
+                str(p) for p in (me.get("familyName"), me.get("givenName")) if p)
+        self.ctx.signals.account_info.emit(name, self.ctx.settings.get("user", ""))
 
     def _on_switch_account(self):
         """切换账号：退出当前账号，忘掉存下的账号密码，回到登录框。"""
         reply = QMessageBox.question(
-            self,
-            self.tr("confirm_title"),
-            self.tr("switch_confirm"),
+            self, self.tr("confirm_title"), self.tr("switch_confirm"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -391,10 +375,7 @@ class MainWindow(QMainWindow):
             self.ctx.log(self.tr("enter_credentials"))
 
     def _load_courses(self):
-        threading.Thread(
-            target=self._load_courses_thread,
-            daemon=True,
-        ).start()
+        threading.Thread(target=self._load_courses_thread, daemon=True).start()
 
     def _load_courses_thread(self):
         epoch = self.ctx.account_epoch
