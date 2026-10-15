@@ -435,9 +435,28 @@ class BlackboardAPI:
                             or "未命名测验"
                         )
 
+                        detail = item.get("contentDetail") or {}
+                        test = (
+                            detail
+                            .get("resource/x-bb-asmt-test-link", {})
+                            .get("test", {})
+                        )
+                        assessment = test.get("assessment", {})
+
                         quizzes.append({
                             "id": item_id,
                             "title": title,
+                            "assessment_id": (
+                                assessment.get("id")
+                                or assessment.get("assessmentId")
+                                or test.get("assessmentId")
+                                or ""
+                            ),
+                            "instructions": (
+                                assessment
+                                .get("instructions", {})
+                                .get("rawText", "")
+                            ),
                         })
 
                         self.log(f"[测验识别] 找到测验：{title}")
@@ -467,6 +486,76 @@ class BlackboardAPI:
         )
 
         return quizzes
+
+    def _quiz_api(self, path):
+        """通过当前会话读取测验 API，并兼容 Blackboard 公共 API 路径。"""
+        data = self.api(f"{BASE_URL}/learn/api/v1{path}")
+
+        if data is not None:
+            return data
+
+        return self.api(f"{BASE_URL}/learn/api/public/v1{path}")
+
+    def get_quiz_questions(self, course_id, assessment_id):
+        """读取测验题目；失败返回 None，成功但无题目返回空列表。"""
+        if not course_id or not assessment_id:
+            self.log("[测验详情] 缺少课程 ID 或测验 assessment ID。")
+            return None
+
+        course_id = quote(str(course_id), safe="")
+        assessment_id = quote(str(assessment_id), safe="")
+        questions = []
+        offset = 0
+        limit = 100
+
+        while True:
+            path = (
+                f"/courses/{course_id}/assessments/{assessment_id}/questions"
+                f"?offset={offset}&limit={limit}"
+            )
+            data = self._quiz_api(path)
+
+            if not isinstance(data, dict):
+                return None
+
+            results = data.get("results")
+
+            if not isinstance(results, list):
+                self.log("[测验详情] 题目接口未返回有效的 results。")
+                return None
+
+            questions.extend(
+                question for question in results
+                if isinstance(question, dict)
+            )
+
+            if len(results) < limit:
+                break
+
+            offset += len(results)
+
+        self.log(f"[测验详情] 已读取 {len(questions)} 道题目。")
+        return questions
+
+    def get_quiz_question(self, course_id, assessment_id, question_id):
+        """读取单道题目的完整信息；失败返回 None。"""
+        if not course_id or not assessment_id or not question_id:
+            self.log("[测验详情] 缺少课程、测验或题目 ID。")
+            return None
+
+        course_id = quote(str(course_id), safe="")
+        assessment_id = quote(str(assessment_id), safe="")
+        question_id = quote(str(question_id), safe="")
+        path = (
+            f"/courses/{course_id}/assessments/{assessment_id}/questions/"
+            f"{question_id}"
+        )
+        data = self._quiz_api(path)
+
+        if isinstance(data, dict):
+            return data
+
+        return None
 
     # ------------------------------------------------------------------ 下载
     def download_file(self, url, path):
