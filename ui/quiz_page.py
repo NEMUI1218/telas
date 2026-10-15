@@ -65,7 +65,7 @@ class QuizPage(QWidget):
             self.refresh_quizzes()
 
     def on_course_changed(self, _course_id, _course_name):
-        # 只重绘已加载的课程名称，不发起测验 API 请求。
+        # 顶部课程选择变化后，只展示当前选中的课程。
         self.refresh_quizzes()
 
     def refresh_quizzes(self):
@@ -73,41 +73,33 @@ class QuizPage(QWidget):
         self._has_loaded = True
         self.quiz_tree.clear()
 
-        courses = list(self.ctx.courses.items())
-        if not courses:
-            self.status_label.setText("请先登录并加载课程。")
+        course_id = str(self.ctx.current_course_id or "")
+        course_name = self.ctx.current_course_name or ""
+        if not course_id:
+            self.status_label.setText("请先从主界面选择课程。")
             return
 
-        for index, (course_name, course) in enumerate(courses):
-            course_item = QTreeWidgetItem([course_name, "课程"])
-            course_item.setData(
+        course_item = QTreeWidgetItem([course_name, "课程"])
+        course_item.setData(0, Qt.ItemDataRole.UserRole, course_id)
+        self.quiz_tree.addTopLevelItem(course_item)
+
+        # 仅用示例内容预览选中课程下的子菜单布局。
+        for number in (1, 2):
+            test_item = QTreeWidgetItem([
+                f"测试作业示例 {number}",
+                "测试",
+            ])
+            test_item.setData(
                 0,
                 Qt.ItemDataRole.UserRole,
-                str(course.get("id", "")),
+                {"preview": True},
             )
-            self.quiz_tree.addTopLevelItem(course_item)
+            course_item.addChild(test_item)
 
-            if index == 0:
-                # 仅用于检查子菜单外观；此示例不代表 Blackboard 实际数据。
-                for number in (1, 2):
-                    test_item = QTreeWidgetItem([
-                        f"测试作业示例 {number}",
-                        "测试",
-                    ])
-                    test_item.setData(
-                        0,
-                        Qt.ItemDataRole.UserRole,
-                        {"preview": True},
-                    )
-                    course_item.addChild(test_item)
-            else:
-                course_item.addChild(
-                    QTreeWidgetItem(["此课时未发现测试作业", ""])
-                )
-
-            course_item.setExpanded(True)
+        course_item.setExpanded(True)
 
         self.quiz_tree.expandAll()
         self.status_label.setText(
-            "界面预览：测试名称为示例数据，未调用测验 API。"
+            f"界面预览：当前课程“{course_name}”；"
+            "测试名称为示例数据，未调用测验 API。"
         )
