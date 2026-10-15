@@ -151,7 +151,7 @@ class MainWindow(QMainWindow):
         s.login_state.connect(self.header.set_login_status)
         s.login_busy.connect(self.header.set_login_busy)
         s.account_info.connect(self.header.set_account)
-        s.language_changed.connect(self._retranslate_all)
+        s.language_changed.connect(self._on_language_changed)
         s.theme_changed.connect(self.sidebar.refresh_icons)
 
         self.sidebar.group.idClicked.connect(self._switch_page)
@@ -413,6 +413,19 @@ class MainWindow(QMainWindow):
         self._set_status(self.tr("status_ready"))
         self._apply_log_visible()
         self._refresh_combo_placeholders()
+
+    def _on_language_changed(self):
+        """Clear old-language logs, translate every page, then reload its data."""
+        self._clear_log()
+        self._retranslate_all()
+
+        course_id = str(self.ctx.current_course_id or "")
+        if not course_id:
+            return
+
+        self.download_page.course_id = course_id
+        self.download_page._start_scan()
+        self.quiz_page.refresh_quizzes()
 
     def _refresh_combo_placeholders(self):
         for combo, key in [
