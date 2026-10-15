@@ -180,8 +180,8 @@ class QuizPage(QWidget):
             parent = ensure_lesson(quiz.get("path", []))
             quiz_item = QTreeWidgetItem([
                 quiz.get("title") or self.ctx.tr("unnamed_quiz"),
-                quiz.get("attempts_display") or "—",
-                quiz.get("points_display") or "—",
+                self._format_attempts(quiz),
+                self._format_points(quiz),
                 self.ctx.tr("quiz_type"),
             ])
             quiz_item.setData(0, Qt.ItemDataRole.UserRole, quiz.get("id", ""))
@@ -190,6 +190,8 @@ class QuizPage(QWidget):
             else:
                 parent.addChild(quiz_item)
             # QTreeWidget 只有在条目已加入树后才能设置单元格控件。
+            # 清空底层文字，避免它与 QLabel 重叠绘制造成重影。
+            quiz_item.setText(0, "")
             self._set_name_and_url(
                 quiz_item,
                 quiz.get("title") or self.ctx.tr("unnamed_quiz"),
@@ -218,6 +220,37 @@ class QuizPage(QWidget):
             )
         else:
             self.status_label.setText(self.ctx.tr("quiz_scan_empty"))
+
+    def _format_attempts(self, quiz):
+        if not quiz.get("attempts_known"):
+            return "—"
+        count = quiz.get("attempt_count", 0)
+        allowed = quiz.get("attempts_allowed")
+        if not quiz.get("attempts_allowed_known"):
+            return "—"
+        if allowed in (None, 0, -1, "0", "-1"):
+            return self.ctx.tr("quiz_attempts_unlimited")
+        return self.ctx.tr("quiz_attempts_format", count, allowed)
+
+    def _format_points(self, quiz):
+        possible = quiz.get("points_possible")
+        if possible is None:
+            return "-/-" if quiz.get("gradebook_known") else "—"
+        possible = self._format_number(possible)
+        earned = quiz.get("points_earned")
+        if earned is not None:
+            return f"{self._format_number(earned)}/{possible}"
+        if quiz.get("attempts_known") and not quiz.get("attempt_count", 0):
+            return f"-/{possible}"
+        return "—"
+
+    @staticmethod
+    def _format_number(value):
+        try:
+            number = float(value)
+            return str(int(number)) if number.is_integer() else str(number)
+        except (TypeError, ValueError):
+            return str(value)
 
     def _set_name_and_url(self, item, title, url):
         safe_title = html.escape(title)
