@@ -1,4 +1,5 @@
 """文件下载页：保存路径 + 扫描 + 勾选文件树 + 下载进度。"""
+import html
 import os
 import threading
 
@@ -77,7 +78,7 @@ class DownloadPage(QWidget):
 
         self.select_all_cb = QCheckBox()
         self.select_all_cb.setTristate(True)
-        self.select_all_cb.setChecked(True)
+        self.select_all_cb.setChecked(False)
         self.select_all_cb.stateChanged.connect(self._on_select_all)
         action_layout.addWidget(self.select_all_cb)
         action_layout.addStretch()
@@ -98,14 +99,15 @@ class DownloadPage(QWidget):
 
         # 文件树
         self.file_tree = QTreeWidget()
-        self.file_tree.setColumnCount(2)
+        self.file_tree.setColumnCount(3)
         self.file_tree.setAlternatingRowColors(True)
         self.file_tree.setIndentation(22)
         header = self.file_tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(1, 110)
+        header.resizeSection(1, 90)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.file_tree.itemChanged.connect(self._on_tree_item_changed)
         active_layout.addWidget(self.file_tree, 1)
 
@@ -135,6 +137,7 @@ class DownloadPage(QWidget):
         if header:
             header.setText(0, self.tr("col_name"))
             header.setText(1, self.tr("col_type"))
+            header.setText(2, self.tr("col_url"))
 
     def _save_path_setting(self):
         self.ctx.settings.set("save_path", self.save_path_input.text().strip())
@@ -190,7 +193,9 @@ class DownloadPage(QWidget):
         tree_widget.clear()
         self._add_tree_items(tree_widget, nodes)
         tree_widget.blockSignals(False)
-        self.select_all_cb.setChecked(True)
+        self.select_all_cb.blockSignals(True)
+        self.select_all_cb.setCheckState(Qt.CheckState.Unchecked)
+        self.select_all_cb.blockSignals(False)
         # 有内容时切到操作页
         if nodes:
             self.content_stack.setCurrentIndex(1)
@@ -198,20 +203,38 @@ class DownloadPage(QWidget):
     def _add_tree_items(self, parent, nodes):
         for node in nodes:
             item = QTreeWidgetItem()
-            item.setCheckState(0, Qt.CheckState.Checked)
+            item.setCheckState(0, Qt.CheckState.Unchecked)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsAutoTristate)
-            if node["type"] == "folder":
-                item.setText(0, node["name"])
-                item.setText(1, self.tr("type_folder"))
-                self._add_tree_items(item, node.get("children", []))
-            else:
-                item.setText(0, node["name"])
-                item.setText(1, self.tr("type_file"))
-                item.setData(0, Qt.ItemDataRole.UserRole, node.get("url", ""))
+            item.setText(0, node.get("name", ""))
+            item.setData(0, Qt.ItemDataRole.UserRole, node.get("url", ""))
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, node.get("type", "other"))
+            type_key = {
+                "lesson": "type_lesson",
+                "file": "type_file",
+                "other": "type_other",
+            }.get(node.get("type"), "type_other")
+            item.setText(1, self.tr(type_key))
             if parent is self.file_tree:
                 parent.addTopLevelItem(item)
             else:
                 parent.addChild(item)
+            self._set_url_cell(item, node.get("link", ""))
+            self._add_tree_items(item, node.get("children", []))
+
+    def _set_url_cell(self, item, url):
+        if not url:
+            return
+        safe_url = html.escape(url, quote=True)
+        link_label = QLabel(
+            f'<a href="{safe_url}">{html.escape(url)}</a>'
+        )
+        link_label.setTextFormat(Qt.TextFormat.RichText)
+        link_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+        )
+        link_label.setOpenExternalLinks(True)
+        link_label.setToolTip(url)
+        self.file_tree.setItemWidget(item, 2, link_label)
 
     def _on_tree_item_changed(self, item, column):
         if column != 0:
@@ -235,7 +258,7 @@ class DownloadPage(QWidget):
         elif checked == total:
             parent.setCheckState(0, Qt.CheckState.Checked)
         else:
-            parent.setCheckState(0, Qt.PartiallyChecked)
+            parent.setCheckState(0, Qt.CheckState.PartiallyChecked)
         self._update_parent_state(parent)
 
     def _update_select_all_state(self):
@@ -252,7 +275,7 @@ class DownloadPage(QWidget):
         elif checked == top_count:
             self.select_all_cb.setCheckState(Qt.CheckState.Checked)
         else:
-            self.select_all_cb.setCheckState(Qt.PartiallyChecked)
+            self.select_all_cb.setCheckState(Qt.CheckState.PartiallyChecked)
         self.select_all_cb.blockSignals(False)
 
     def _on_select_all(self, state):
@@ -276,7 +299,10 @@ class DownloadPage(QWidget):
 
     def _collect_checked(self, item, results):
         if item.childCount() == 0:
-            if item.checkState(0) == Qt.CheckState.Checked:
+            if (
+                item.checkState(0) == Qt.CheckState.Checked
+                and item.data(0, Qt.ItemDataRole.UserRole + 1) == "file"
+            ):
                 url = item.data(0, Qt.ItemDataRole.UserRole)
                 name = item.text(0)
                 if url:
