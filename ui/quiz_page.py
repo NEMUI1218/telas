@@ -72,7 +72,6 @@ class QuizPage(QWidget):
 
         self.ctx.signals.course_changed.connect(self.on_course_changed)
         self.ctx.signals.login_state.connect(self._on_login_state)
-        self.ctx.signals.language_changed.connect(self.retranslate)
         self.retranslate()
 
     def retranslate(self):
@@ -84,6 +83,11 @@ class QuizPage(QWidget):
             self.ctx.tr("quiz_col_points"),
             self.ctx.tr("col_type"),
         ])
+        header_item = self.quiz_tree.headerItem()
+        for column in (1, 2, 3):
+            header_item.setTextAlignment(
+                column, Qt.AlignmentFlag.AlignCenter
+            )
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -160,6 +164,7 @@ class QuizPage(QWidget):
                     "",
                     self.ctx.tr("type_lesson"),
                 ])
+                self._center_result_columns(lesson_item)
                 lesson_item.setData(
                     0,
                     Qt.ItemDataRole.UserRole,
@@ -184,6 +189,7 @@ class QuizPage(QWidget):
                 self._format_points(quiz),
                 self.ctx.tr("quiz_type"),
             ])
+            self._center_result_columns(quiz_item)
             quiz_item.setData(0, Qt.ItemDataRole.UserRole, quiz.get("id", ""))
             if parent is None:
                 self.quiz_tree.addTopLevelItem(quiz_item)
@@ -231,6 +237,11 @@ class QuizPage(QWidget):
         if allowed in (None, 0, -1, "0", "-1"):
             return self.ctx.tr("quiz_attempts_unlimited")
         return self.ctx.tr("quiz_attempts_format", count, allowed)
+
+    @staticmethod
+    def _center_result_columns(item):
+        for column in (1, 2, 3):
+            item.setTextAlignment(column, Qt.AlignmentFlag.AlignCenter)
 
     def _format_points(self, quiz):
         possible = quiz.get("points_possible")
