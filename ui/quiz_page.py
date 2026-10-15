@@ -49,7 +49,7 @@ class QuizPage(QWidget):
         layout.addLayout(toolbar)
 
         self.quiz_tree = QTreeWidget()
-        self.quiz_tree.setColumnCount(3)
+        self.quiz_tree.setColumnCount(4)
         self.quiz_tree.setAlternatingRowColors(True)
         self.quiz_tree.setIndentation(22)
         self.quiz_tree.header().setStretchLastSection(False)
@@ -57,12 +57,17 @@ class QuizPage(QWidget):
             0, QHeaderView.ResizeMode.Stretch
         )
         self.quiz_tree.header().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
+            1, QHeaderView.ResizeMode.Fixed
         )
         self.quiz_tree.header().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Fixed
         )
+        self.quiz_tree.header().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.Fixed
+        )
+        self.quiz_tree.header().resizeSection(1, 110)
         self.quiz_tree.header().resizeSection(2, 90)
+        self.quiz_tree.header().resizeSection(3, 90)
         layout.addWidget(self.quiz_tree, 1)
 
         self.ctx.signals.course_changed.connect(self.on_course_changed)
@@ -75,7 +80,8 @@ class QuizPage(QWidget):
         self.refresh_btn.setText(self.ctx.tr("refresh"))
         self.quiz_tree.setHeaderLabels([
             self.ctx.tr("quiz_col_name"),
-            self.ctx.tr("col_url"),
+            self.ctx.tr("quiz_col_attempts"),
+            self.ctx.tr("quiz_col_points"),
             self.ctx.tr("col_type"),
         ])
 
@@ -151,6 +157,7 @@ class QuizPage(QWidget):
                 lesson_item = QTreeWidgetItem([
                     lesson_name,
                     "",
+                    "",
                     self.ctx.tr("type_lesson"),
                 ])
                 lesson_item.setData(
@@ -173,7 +180,8 @@ class QuizPage(QWidget):
             parent = ensure_lesson(quiz.get("path", []))
             quiz_item = QTreeWidgetItem([
                 quiz.get("title") or self.ctx.tr("unnamed_quiz"),
-                "",
+                quiz.get("attempts_display") or "—",
+                quiz.get("points_display") or "—",
                 self.ctx.tr("quiz_type"),
             ])
             quiz_item.setData(0, Qt.ItemDataRole.UserRole, quiz.get("id", ""))
@@ -182,7 +190,11 @@ class QuizPage(QWidget):
             else:
                 parent.addChild(quiz_item)
             # QTreeWidget 只有在条目已加入树后才能设置单元格控件。
-            self._set_url_cell(quiz_item, quiz.get("url", ""))
+            self._set_name_and_url(
+                quiz_item,
+                quiz.get("title") or self.ctx.tr("unnamed_quiz"),
+                quiz.get("url", ""),
+            )
 
         for lesson_name, lesson_item in lessons.items():
             has_quiz = any(
@@ -193,6 +205,7 @@ class QuizPage(QWidget):
                 lesson_item.addChild(
                     QTreeWidgetItem([
                         self.ctx.tr("no_quiz_for_lesson"),
+                        "",
                         "",
                         "",
                     ])
@@ -206,17 +219,21 @@ class QuizPage(QWidget):
         else:
             self.status_label.setText(self.ctx.tr("quiz_scan_empty"))
 
-    def _set_url_cell(self, item, url):
-        if not url:
-            return
-        safe_url = html.escape(url, quote=True)
-        link_label = QLabel(
-            f'<a href="{safe_url}">{html.escape(self.ctx.tr("open"))}</a>'
-        )
+    def _set_name_and_url(self, item, title, url):
+        safe_title = html.escape(title)
+        content = safe_title
+        if url:
+            safe_url = html.escape(url, quote=True)
+            content += (
+                f'&nbsp;&nbsp;<a href="{safe_url}">'
+                f'{html.escape(self.ctx.tr("open"))}</a>'
+            )
+        link_label = QLabel(content)
         link_label.setTextFormat(Qt.TextFormat.RichText)
         link_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextBrowserInteraction
         )
         link_label.setOpenExternalLinks(True)
-        link_label.setToolTip(url)
-        self.quiz_tree.setItemWidget(item, 1, link_label)
+        if url:
+            link_label.setToolTip(url)
+        self.quiz_tree.setItemWidget(item, 0, link_label)
