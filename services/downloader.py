@@ -1,6 +1,7 @@
 """文件扫描与下载服务。纯逻辑，不依赖 Qt。"""
 import os
 import re
+from services.content_types import has_content_type
 
 
 def sanitize_name(name):
@@ -23,10 +24,9 @@ class DownloadService:
         nodes = []
         for item in data.get("results", []):
             title = item.get("title", "")
-            detail = item.get("contentDetail", {})
-            handler = item.get("contentHandler", "")
+            detail = item.get("contentDetail", {}) or {}
 
-            if "resource/x-bb-file" in detail or handler == "resource/x-bb-file":
+            if has_content_type(item, "resource/x-bb-file"):
                 file = detail.get("resource/x-bb-file", {}).get("file", {})
                 name = file.get("fileName")
                 if name:
@@ -35,13 +35,13 @@ class DownloadService:
                         "url": file.get("permanentUrl", ""),
                     })
 
-            elif "resource/x-bb-folder" in detail or handler == "resource/x-bb-folder":
+            elif has_content_type(item, "resource/x-bb-folder"):
                 children = self.scan_tree(course_id, item["id"])
                 nodes.append({
                     "type": "folder", "name": title, "children": children,
                 })
 
-            elif "resource/x-bb-asmt-test-link" in detail or handler == "resource/x-bb-asmt-test-link":
+            elif has_content_type(item, "resource/x-bb-asmt-test-link"):
                 assessment = detail.get("resource/x-bb-asmt-test-link", {}).get("test", {}).get("assessment", {})
                 instructions = assessment.get("instructions", {}).get("rawText", "")
                 for m in re.finditer(r'<a\s[^>]*?href="(https?://[^"]+/bbcswebdav/[^"]+)"[^>]*>', instructions):
@@ -53,7 +53,7 @@ class DownloadService:
                             "url": file_url.replace("https://lms2017.teikyo-u.ac.jp", ""),
                         })
 
-            elif "resource/x-bb-document" in detail or handler == "resource/x-bb-document":
+            elif has_content_type(item, "resource/x-bb-document"):
                 body_html = item.get("body", {}).get("rawText", "")
                 for m in re.finditer(r'<a\s[^>]*?href="(https?://[^"]+/bbcswebdav/[^"]+)"[^>]*>', body_html):
                     file_url = m.group(1)
