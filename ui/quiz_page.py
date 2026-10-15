@@ -1,5 +1,6 @@
 """显示当前课程的 Blackboard 测验及其课时分类。"""
 
+import html
 import threading
 
 from PySide6.QtCore import Qt, QObject, Signal
@@ -46,7 +47,7 @@ class QuizPage(QWidget):
         layout.addLayout(toolbar)
 
         self.quiz_tree = QTreeWidget()
-        self.quiz_tree.setColumnCount(2)
+        self.quiz_tree.setColumnCount(3)
         self.quiz_tree.setAlternatingRowColors(True)
         self.quiz_tree.setIndentation(22)
         self.quiz_tree.header().setStretchLastSection(False)
@@ -55,6 +56,9 @@ class QuizPage(QWidget):
         )
         self.quiz_tree.header().setSectionResizeMode(
             1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.quiz_tree.header().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
         )
         layout.addWidget(self.quiz_tree, 1)
 
@@ -66,7 +70,7 @@ class QuizPage(QWidget):
     def retranslate(self):
         self.title_label.setText(self.ctx.tr("tab_quiz"))
         self.refresh_btn.setText("刷新")
-        self.quiz_tree.setHeaderLabels(["课时 / 测验", "类型"])
+        self.quiz_tree.setHeaderLabels(["课时 / 测验", "类型", "URL"])
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -134,9 +138,10 @@ class QuizPage(QWidget):
 
         lessons = {}
 
-        def ensure_lesson(path):
+        def ensure_lesson(path, url=""):
             if not path:
                 return None
+
             lesson_name = path[0]
             if lesson_name not in lessons:
                 lesson_item = QTreeWidgetItem([lesson_name, "课时"])
@@ -147,14 +152,18 @@ class QuizPage(QWidget):
                 )
                 self.quiz_tree.addTopLevelItem(lesson_item)
                 lessons[lesson_name] = lesson_item
-            return lessons[lesson_name]
+
+            lesson_item = lessons[lesson_name]
+            if url:
+                self._set_url_cell(lesson_item, url)
+            return lesson_item
 
         # 只把课程目录下的第一层文件夹作为课时显示。
-        # 更深层的“授業用資料について”等资料文件夹继续由文件下载页展示。
+        # 更深层的资料文件夹由文件下载页展示。
         for folder in folder_list:
             path = folder.get("path", [])
             if len(path) == 1:
-                ensure_lesson(path)
+                ensure_lesson(path, folder.get("url", ""))
 
         for quiz in quiz_list:
             parent = ensure_lesson(quiz.get("path", []))
@@ -167,6 +176,8 @@ class QuizPage(QWidget):
                 Qt.ItemDataRole.UserRole,
                 quiz.get("id", ""),
             )
+            self._set_url_cell(quiz_item, quiz.get("url", ""))
+
             if parent is None:
                 self.quiz_tree.addTopLevelItem(quiz_item)
             else:
@@ -174,7 +185,8 @@ class QuizPage(QWidget):
 
         for lesson_name, lesson_item in lessons.items():
             has_quiz = any(
-                quiz.get("path") and quiz["path"][0] == lesson_name
+                quiz.get("path")
+                and quiz["path"][0] == lesson_name
                 for quiz in quiz_list
             )
             if not has_quiz:
@@ -189,3 +201,19 @@ class QuizPage(QWidget):
             )
         else:
             self.status_label.setText("扫描完成，当前课程没有测验。")
+
+    def _set_url_cell(self, item, url):
+        if not url:
+            return
+
+        safe_url = html.escape(url, quote=True)
+        link_label = QLabel(
+            f'<a href="{safe_url}">{html.escape(url)}</a>'
+        )
+        link_label.setTextFormat(Qt.TextFormat.RichText)
+        link_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+        )
+        link_label.setOpenExternalLinks(True)
+        link_label.setToolTip(url)
+        self.quiz_tree.setItemWidget(item, 2, link_label)
