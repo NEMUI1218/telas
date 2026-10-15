@@ -90,7 +90,10 @@ class MainWindow(QMainWindow):
         self.status_label.setObjectName("status_text")
         self.status_label.setTextFormat(Qt.TextFormat.PlainText)
         # 宽度忽略内容：再长的消息也只是被裁掉，不会把窗口撑宽
-        self.status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.status_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
         top_row.addWidget(self.status_label, 1)
 
         self.clear_log_btn = QPushButton()
@@ -221,7 +224,10 @@ class MainWindow(QMainWindow):
         self.log_area.setVisible(self._log_visible)
         self.clear_log_btn.setVisible(self._log_visible)
         self.log_toggle_btn.setText(
-            "▾  " + self.tr("log_hide") if self._log_visible else "▸  " + self.tr("log_show"))
+            "▾  " + self.tr("log_hide")
+            if self._log_visible
+            else "▸  " + self.tr("log_show")
+        )
 
     # ------------------------------------------------------------- 轻提示
     def _show_toast(self, text, kind="info"):
@@ -257,13 +263,19 @@ class MainWindow(QMainWindow):
                 self.restoreGeometry(QByteArray.fromBase64(geo.encode()))
             except Exception:
                 pass
-        # 默认折叠：最新一条消息在状态行里看得到，需要完整记录时再展开
-        self._log_visible = self.ctx.settings.get("log_visible", "0") == "1"
+        # 每次启动默认折叠；运行中仍可手动展开查看完整记录。
+        self._log_visible = False
         self._apply_log_visible()
 
     def _save_state(self):
-        self.ctx.settings.set("win_geo", bytes(self.saveGeometry().toBase64()).decode())
-        self.ctx.settings.set("log_visible", "1" if self._log_visible else "0")
+        self.ctx.settings.set(
+            "win_geo",
+            bytes(self.saveGeometry().toBase64()).decode(),
+        )
+        self.ctx.settings.set(
+            "log_visible",
+            "1" if self._log_visible else "0",
+        )
         self.ctx.settings.save()
 
     def closeEvent(self, event):
@@ -281,7 +293,11 @@ class MainWindow(QMainWindow):
 
     def _run_login(self, user, pwd):
         self.header.set_login_busy(True)
-        threading.Thread(target=self._login_thread, args=(user, pwd), daemon=True).start()
+        threading.Thread(
+            target=self._login_thread,
+            args=(user, pwd),
+            daemon=True,
+        ).start()
 
     def _login_thread(self, user, pwd):
         try:
@@ -319,13 +335,21 @@ class MainWindow(QMainWindow):
         name = ""
         if me:
             name = " ".join(
-                str(p) for p in (me.get("familyName"), me.get("givenName")) if p)
-        self.ctx.signals.account_info.emit(name, self.ctx.settings.get("user", ""))
+                str(p)
+                for p in (me.get("familyName"), me.get("givenName"))
+                if p
+            )
+        self.ctx.signals.account_info.emit(
+            name,
+            self.ctx.settings.get("user", ""),
+        )
 
     def _on_switch_account(self):
         """切换账号：退出当前账号，忘掉存下的账号密码，回到登录框。"""
         reply = QMessageBox.question(
-            self, self.tr("confirm_title"), self.tr("switch_confirm"),
+            self,
+            self.tr("confirm_title"),
+            self.tr("switch_confirm"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -367,7 +391,10 @@ class MainWindow(QMainWindow):
             self.ctx.log(self.tr("enter_credentials"))
 
     def _load_courses(self):
-        threading.Thread(target=self._load_courses_thread, daemon=True).start()
+        threading.Thread(
+            target=self._load_courses_thread,
+            daemon=True,
+        ).start()
 
     def _load_courses_thread(self):
         epoch = self.ctx.account_epoch
