@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, Q
 
 from utils.theme import apply_theme
 
-LANG_MAP = ["ja", "en", "zh"]
+LANG_MAP = ["ja", "en", "zh", "zh_TW"]
 
 
 class SettingsPage(QWidget):
@@ -33,9 +33,11 @@ class SettingsPage(QWidget):
         lang_row.addStretch()
         self.lang_cb = QComboBox()
         self.lang_cb.setFixedWidth(160)
-        self.lang_cb.addItems(["日本語", "English", "中文"])
+        self.lang_cb.addItems(["日本語", "English", "简体中文", "繁體中文"])
         self.lang_cb.setFixedHeight(32)
-        lang_index = {"ja": 0, "en": 1, "zh": 2}.get(self.ctx.i18n.lang, 2)
+        lang_index = {lang: i for i, lang in enumerate(LANG_MAP)}.get(
+            self.ctx.i18n.lang, 2
+        )
         self.lang_cb.setCurrentIndex(lang_index)
         self.lang_cb.currentIndexChanged.connect(self._on_lang_changed)
         lang_row.addWidget(self.lang_cb)
