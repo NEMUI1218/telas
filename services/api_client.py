@@ -493,7 +493,7 @@ class BlackboardAPI:
 
         columns_url = (
             f"{BASE_URL}/learn/api/public/v2/courses/"
-            f"{encoded_course_id}/gradebook/columns?limit=10000"
+            f"{encoded_course_id}/gradebook/columns"
         )
         columns_data = self.api(columns_url)
         columns = (
@@ -536,7 +536,7 @@ class BlackboardAPI:
                 f"{BASE_URL}/learn/api/public/v2/courses/"
                 f"{encoded_course_id}/gradebook/columns/"
                 f"{quote(str(column_id), safe='')}/attempts"
-                f"?userId={encoded_user_id}&limit=10000"
+                f"?userId={encoded_user_id}"
             )
             attempts_data = self.api(attempts_url)
             attempts = (
