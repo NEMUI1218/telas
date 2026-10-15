@@ -76,7 +76,7 @@ class QuizPage(QWidget):
         """更新页面文字。"""
         self.title_label.setText(self.ctx.tr("tab_quiz"))
         self.refresh_btn.setText("刷新")
-        self.empty_label.setText("进入页面后，点击刷新即可测试列表显示。")
+        self.empty_label.setText("当前没有测验。")
 
     def showEvent(self, event):
         """每次页面显示时，首次进入或重新进入均尝试刷新。"""
@@ -106,7 +106,7 @@ class QuizPage(QWidget):
         self.empty_label.setVisible(is_empty)
 
     def refresh_quizzes(self):
-        """使用测试数据刷新列表，不调用 API。"""
+        """读取当前课程的真实测验并刷新列表。"""
         self._has_loaded = True
         self.quiz_list.clear()
 
@@ -116,20 +116,32 @@ class QuizPage(QWidget):
             self._update_empty_state()
             return
 
-        # 临时测试数据：用于确认页面能正常显示。
-        # 下一阶段接入 API 后，会替换为 Blackboard 返回的真实测验。
-        demo_quizzes = [
-            "测验名称示例 1",
-            "测验名称示例 2",
-            "测验名称示例 3",
-        ]
+        self.status_label.setText("正在读取测验…")
+        self.refresh_btn.setEnabled(False)
 
-        for title in demo_quizzes:
-            item = QListWidgetItem(title)
-            self.quiz_list.addItem(item)
+        try:
+            quizzes = self.ctx.api.get_course_quizzes(self.course_id)
+        except Exception as e:
+            self.ctx.log(
+                f"读取测验失败（{type(e).__name__}）：{e}"
+            )
+            quizzes = None
+        finally:
+            self.refresh_btn.setEnabled(True)
 
-        self.status_label.setText(
-            f"页面测试：{len(demo_quizzes)} 条示例数据"
-        )
-        self.empty_label.setText("当前没有测验。")
+        if quizzes is None:
+            self.status_label.setText("读取测验失败，请稍后重试。")
+            self.empty_label.setText("无法读取测验列表，请点击刷新重试。")
+            self._update_empty_state()
+            return
+
+        for quiz in quizzes:
+            if not isinstance(quiz, dict):
+                continue
+            title = quiz.get("title") or "未命名测验"
+            self.quiz_list.addItem(QListWidgetItem(title))
+
+        count = self.quiz_list.count()
+        self.status_label.setText(f"已读取 {count} 个测验")
+        self.empty_label.setText("当前课程没有测验。")
         self._update_empty_state()
