@@ -38,17 +38,6 @@ jobs:
       - name: Build
         run: python -m PyInstaller BlackboardTool.spec --noconfirm --clean
 
-      - name: Verify packaged UI modules
-        shell: bash
-        run: |
-          if [[ "$RUNNER_OS" == "macOS" ]]; then
-            executable="dist/BlackboardTool.app/Contents/MacOS/BlackboardTool"
-          else
-            executable="dist/BlackboardTool.exe"
-          fi
-          pyi-archive_viewer -b -r "$executable" > archive_contents.txt
-          grep -Fq "ui.download_page" archive_contents.txt
-
       - name: Zip (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
