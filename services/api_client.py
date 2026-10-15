@@ -1,14 +1,20 @@
 """Blackboard REST API 客户端。
 
-只负责 HTTP 通讯与会话管理，不包含任何 UI 逻辑。只发 GET 请求读取数据，不修改服务器上的任何东西。
-bb_config.json / bb_session.json 都在每个用户自己的数据目录里，见 utils/paths.py。
+只负责 HTTP 通讯与会话管理，不包含任何 UI 逻辑。
+只发 GET 请求读取数据，不修改服务器上的任何东西。
+bb_config.json / bb_session.json 都在每个用户自己的数据目录里，
+见 utils/paths.py。
 """
+
 import json
 import os
 import requests
+
 from bs4 import BeautifulSoup
+from urllib.parse import quote, urlparse
 
 from utils.paths import data_path
+
 
 BASE_URL = "https://lms2017.teikyo-u.ac.jp"
 LOGIN_URL = BASE_URL + "/webapps/login/"
@@ -31,43 +37,60 @@ class BlackboardAPI:
     # ------------------------------------------------------------------ 会话
     def save_session(self):
         cookies = []
+
         for c in self.session.cookies:
             cookies.append({
-                "name": c.name, "value": c.value,
-                "domain": c.domain, "path": c.path,
+                "name": c.name,
+                "value": c.value,
+                "domain": c.domain,
+                "path": c.path,
             })
-        data = {"cookies": cookies, "xsrf": self.xsrf}
+
+        data = {
+            "cookies": cookies,
+            "xsrf": self.xsrf,
+        }
+
         try:
-            with open(data_path(SESSION_FILE), "w", encoding="utf-8") as f:
+            with open(
+                data_path(SESSION_FILE),
+                "w",
+                encoding="utf-8",
+            ) as f:
                 json.dump(data, f, ensure_ascii=False)
         except Exception:
             pass
 
     def load_session(self):
         path = data_path(SESSION_FILE)
+
         if not os.path.exists(path):
             return False
+
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
             for c in data.get("cookies", []):
                 self.session.cookies.set(
-                    c["name"], c["value"],
-                    domain=c.get("domain", ""), path=c.get("path", "/"),
+                    c["name"],
+                    c["value"],
+                    domain=c.get("domain", ""),
+                    path=c.get("path", "/"),
                 )
+
             self.xsrf = data.get("xsrf", "")
             return bool(self.xsrf)
+
         except Exception:
             return False
 
     def logout(self):
-        """丢掉当前登录：内存里的 cookie 和 token，以及磁盘上的会话文件。
-
-        只清本机的东西，不请求服务器；服务器那边的会话到期后自己失效。
-        """
+        """清除本机登录状态，不主动修改服务器上的数据。"""
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": UA})
         self.xsrf = ""
+
         try:
             os.remove(data_path(SESSION_FILE))
         except OSError:
@@ -80,19 +103,21 @@ class BlackboardAPI:
 
         soup = BeautifulSoup(
             self.session.get(BASE_URL).text,
-            "html.parser"
+            "html.parser",
         )
 
         data = {}
+
         for x in soup.find_all("input"):
             name = x.get("name")
+
             if name:
                 data[name] = x.get("value", "")
 
         data.update({
             "user_id": user,
             "password": pwd,
-            "login": "サインイン"
+            "login": "サインイン",
         })
 
         self.log("提交登录...")
@@ -100,40 +125,64 @@ class BlackboardAPI:
         login_response = self.session.post(
             LOGIN_URL,
             data=data,
-            allow_redirects=True
+            allow_redirects=True,
         )
 
-        self.log(f"[登录诊断] 提交后 HTTP 状态码: {login_response.status_code}")
-        self.log(f"[登录诊断] 提交后最终路径: {login_response.url.split('?')[0]}")
+        self.log(
+            f"[登录诊断] 提交后 HTTP 状态码: "
+            f"{login_response.status_code}"
+        )
+        self.log(
+            f"[登录诊断] 提交后最终路径: "
+            f"{login_response.url.split('?')[0]}"
+        )
 
         page_response = self.session.get(
             BASE_URL + "/ultra",
-            allow_redirects=True
+            allow_redirects=True,
         )
 
-        self.log(f"[登录诊断] 访问课程页面 HTTP 状态码: {page_response.status_code}")
-        self.log(f"[登录诊断] 课程页面最终路径: {page_response.url.split('?')[0]}")
+        self.log(
+            f"[登录诊断] 访问课程页面 HTTP 状态码: "
+            f"{page_response.status_code}"
+        )
+        self.log(
+            f"[登录诊断] 课程页面最终路径: "
+            f"{page_response.url.split('?')[0]}"
+        )
 
-        # 检查是否仍然显示登录表单
-        page = BeautifulSoup(page_response.text, "html.parser")
-        has_password_input = page.find("input", {"type": "password"}) is not None
-  
+        page = BeautifulSoup(
+            page_response.text,
+            "html.parser",
+        )
+
+        has_password_input = (
+            page.find("input", {"type": "password"}) is not None
+        )
+
         if has_password_input:
-            self.log("登录失败：访问课程页面后仍检测到密码输入框。")
+            self.log(
+                "登录失败：访问课程页面后仍检测到密码输入框。"
+            )
             return False
-   
+
         # 提取 XSRF 信息
         all_cookies = self.session.cookies.get_dict()
         xsrf = None
 
         bb = all_cookies.get("BbRouter", "")
+
         if "xsrf:" in bb:
             xsrf = bb.split("xsrf:", 1)[1].split(",", 1)[0]
 
         if not xsrf:
             for cookie in self.session.cookies:
                 if "xsrf:" in cookie.value:
-                    xsrf = cookie.value.split("xsrf:", 1)[1].split(",", 1)[0]
+                    xsrf = (
+                        cookie.value
+                        .split("xsrf:", 1)[1]
+                        .split(",", 1)[0]
+                    )
                     break
 
         if not xsrf:
@@ -143,37 +192,46 @@ class BlackboardAPI:
         self.xsrf = xsrf
         self.log("已找到 XSRF 信息，继续验证 API 认证状态。")
 
-        # 用真实的用户信息接口验证认证状态
+        # 验证 API 认证状态
         try:
             response = self.session.get(
                 BASE_URL + "/learn/api/v1/users/me",
                 headers={"Accept": "application/json"},
-                timeout=20
+                timeout=20,
             )
 
-            self.log(f"[登录诊断] 用户信息 API HTTP 状态码: {response.status_code}")
+            self.log(
+                f"[登录诊断] 用户信息 API HTTP 状态码: "
+                f"{response.status_code}"
+            )
 
             if response.status_code != 200:
                 self.log("登录验证失败：用户信息 API 未通过认证。")
                 return False
 
             result = response.json()
+
             if not isinstance(result, dict) or not result:
-                self.log("登录验证失败：用户信息 API 没有返回有效的用户数据。")
+                self.log(
+                    "登录验证失败：用户信息 API "
+                    "没有返回有效的用户数据。"
+                )
                 return False
 
         except Exception as e:
-            self.log(f"登录验证失败：请求用户信息 API 时发生异常（{type(e).__name__}）。")
+            self.log(
+                f"登录验证失败：请求用户信息 API 时发生异常"
+                f"（{type(e).__name__}）。"
+            )
             return False
 
         self.log("登录成功：用户信息 API 验证通过。")
         self.save_session()
+
         return True
 
     # ------------------------------------------------------------------ 请求
     def api(self, url):
-        from urllib.parse import urlparse
-
         try:
             r = self.session.get(
                 url,
@@ -186,19 +244,30 @@ class BlackboardAPI:
             self.log(f"[API] 请求路径: {path}")
             self.log(f"[API] HTTP 状态码: {r.status_code}")
             self.log(f"[API] 最终响应地址: {urlparse(r.url).path}")
-            self.log(f"[API] Content-Type: {r.headers.get('Content-Type', '')}")
+            self.log(
+                f"[API] Content-Type: "
+                f"{r.headers.get('Content-Type', '')}"
+            )
 
             if r.status_code == 200:
                 try:
                     data = r.json()
 
                     if isinstance(data, dict):
-                        self.log(f"[API] JSON 顶层字段: {list(data.keys())}")
+                        self.log(
+                            f"[API] JSON 顶层字段: {list(data.keys())}"
+                        )
 
                         if isinstance(data.get("results"), list):
-                            self.log(f"[API] results 数量: {len(data['results'])}")
+                            self.log(
+                                f"[API] results 数量: "
+                                f"{len(data['results'])}"
+                            )
                     else:
-                        self.log(f"[API] JSON 类型: {type(data).__name__}")
+                        self.log(
+                            f"[API] JSON 类型: "
+                            f"{type(data).__name__}"
+                        )
 
                     return data
 
@@ -215,37 +284,205 @@ class BlackboardAPI:
 
     # ------------------------------------------------------------------ 数据
     def get_me(self):
-        return self.api(f"{BASE_URL}/learn/api/v1/users/me")
+        return self.api(
+            f"{BASE_URL}/learn/api/v1/users/me"
+        )
 
     def get_courses(self):
         me = self.get_me()
+
         if not me:
             return {}
+
         user_id = me.get("id", "")
         self.log(f"用户ID: {user_id}")
+
         data = self.api(
             f"{BASE_URL}/learn/api/v1/users/{user_id}/memberships"
-            "?expand=course.effectiveAvailability,course.permissions,courseRole"
+            "?expand=course.effectiveAvailability,"
+            "course.permissions,courseRole"
             "&includeCount=true&limit=10000"
         )
+
         if not data:
             return {}
+
         courses = {}
+
         for item in data.get("results", []):
             course = item.get("course", {})
+
             cid = course.get("id", "")
             name = course.get("name", "")
             role = item.get("courseRole", "")
+
             if cid and name:
-                courses[name] = {"id": cid, "role": role}
+                courses[name] = {
+                    "id": cid,
+                    "role": role,
+                }
+
         return courses
 
+    # -------------------------------------------------------------- 测验识别
+    def get_course_quizzes(self, course_id):
+        """读取指定课程中的测验，返回测验列表。
+
+        返回格式：
+        [
+            {"id": "测验内容ID", "title": "测验名称"},
+            ...
+        ]
+
+        如果读取失败，返回 None。
+        如果读取成功但没有测验，返回空列表。
+        """
+
+        if not course_id:
+            self.log("[测验识别] 没有指定课程 ID。")
+            return None
+
+        course_id = str(course_id)
+        encoded_course_id = quote(course_id, safe="")
+
+        quizzes = []
+        quiz_ids = set()
+        visited_folders = set()
+
+        # 防止递归过程无限循环。
+        def get_children(content_id):
+            encoded_content_id = quote(
+                str(content_id),
+                safe="",
+            )
+
+            url = (
+                f"{BASE_URL}/learn/api/v1/courses/"
+                f"{encoded_course_id}/contents/"
+                f"{encoded_content_id}/children"
+                "?@view=Summary"
+                "&expand=assignedGroups,selfEnrollmentGroups.group,"
+                "gradebookCategory"
+                "&includeInActivityTracking=true"
+                "&limit=10000"
+            )
+
+            data = self.api(url)
+
+            if not isinstance(data, dict):
+                return None
+
+            results = data.get("results")
+
+            if not isinstance(results, list):
+                self.log(
+                    "[测验识别] 课程内容接口没有返回有效的 results。"
+                )
+                return None
+
+            return results
+
+        def is_folder(item):
+            """根据 Blackboard 返回的内容类型判断是否为文件夹。"""
+
+            handler = str(item.get("contentHandler") or "").lower()
+
+            if item.get("hasChildren") is True:
+                return True
+
+            if "folder" in handler:
+                return True
+
+            # 兼容部分返回中没有 contentHandler，
+            # 但明确提供了子内容标记的情况。
+            if item.get("hasChildren") in (1, "true", "True"):
+                return True
+
+            return False
+
+        def walk(content_id="ROOT"):
+            content_id = str(content_id)
+
+            if content_id in visited_folders:
+                return True
+
+            visited_folders.add(content_id)
+
+            items = get_children(content_id)
+
+            if items is None:
+                return False
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+
+                item_id = item.get("id")
+
+                if not item_id:
+                    continue
+
+                item_id = str(item_id)
+                handler = item.get("contentHandler", "")
+
+                # 识别 Blackboard 测验链接。
+                if handler == "resource/x-bb-asmt-test-link":
+                    if item_id not in quiz_ids:
+                        quiz_ids.add(item_id)
+
+                        title = (
+                            item.get("title")
+                            or "未命名测验"
+                        )
+
+                        quizzes.append({
+                            "id": item_id,
+                            "title": title,
+                        })
+
+                        self.log(f"[测验识别] 找到测验：{title}")
+
+                # 只对可能是文件夹的内容继续递归。
+                if is_folder(item):
+                    if not walk(item_id):
+                        return False
+
+            return True
+
+        self.log(
+            f"[测验识别] 开始扫描课程，课程 ID: {course_id}"
+        )
+
+        success = walk("ROOT")
+
+        if not success:
+            self.log(
+                "[测验识别] 扫描未能完整完成，"
+                "请检查 API 日志。"
+            )
+            return None
+
+        self.log(
+            f"[测验识别] 扫描完成，共找到 {len(quizzes)} 个测验。"
+        )
+
+        return quizzes
+
+    # ------------------------------------------------------------------ 下载
     def download_file(self, url, path):
-        """下载到 path，返回字节数。不是 200 或内容为空时不写文件、返回 0（计为失败），
-        免得把登录页或错误页当成文件存下来。"""
-        r = self.session.get(BASE_URL + url, headers={"Accept": "*/*"})
+        """下载文件。
+
+        不是 HTTP 200 或内容为空时不写文件，返回 0。
+        """
+        r = self.session.get(
+            BASE_URL + url,
+            headers={"Accept": "*/*"},
+        )
+
         if r.status_code != 200 or not r.content:
             return 0
+
         with open(path, "wb") as f:
             f.write(r.content)
+
         return len(r.content)
