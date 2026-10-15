@@ -13,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import quote, urlparse
 
+from services.content_types import has_content_type
 from utils.paths import data_path
 
 
@@ -325,17 +326,13 @@ class BlackboardAPI:
         return courses
 
     # -------------------------------------------------------------- 测验识别
-    def get_course_quizzes(self, course_id):
-        """读取指定课程中的测验，返回测验列表。
+    def get_course_quizzes(self, course_id, include_folders=False):
+        """读取指定课程中的测验。
 
-        返回格式：
-        [
-            {"id": "测验内容ID", "title": "测验名称"},
-            ...
-        ]
+        默认返回测验列表。include_folders=True 时同时返回课时文件夹。
 
         如果读取失败，返回 None。
-        如果读取成功但没有测验，返回空列表。
+        如果读取成功但没有测验，测验列表为空。
         """
 
         if not course_id:
@@ -346,6 +343,7 @@ class BlackboardAPI:
         encoded_course_id = quote(course_id, safe="")
 
         quizzes = []
+        folders = []
         quiz_ids = set()
         visited_folders = set()
 
@@ -382,25 +380,8 @@ class BlackboardAPI:
 
             return results
 
-        def is_folder(item):
-            """根据 Blackboard 返回的内容类型判断是否为文件夹。"""
-
-            handler = str(item.get("contentHandler") or "").lower()
-
-            if item.get("hasChildren") is True:
-                return True
-
-            if "folder" in handler:
-                return True
-
-            # 兼容部分返回中没有 contentHandler，
-            # 但明确提供了子内容标记的情况。
-            if item.get("hasChildren") in (1, "true", "True"):
-                return True
-
-            return False
-
-        def walk(content_id="ROOT"):
+        def walk(content_id="ROOT", parent_path=None):
+            parent_path = list(parent_path or [])
             content_id = str(content_id)
 
             if content_id in visited_folders:
@@ -423,28 +404,31 @@ class BlackboardAPI:
                     continue
 
                 item_id = str(item_id)
-                handler = item.get("contentHandler", "")
 
                 # 识别 Blackboard 测验链接。
-                if handler == "resource/x-bb-asmt-test-link":
+                if has_content_type(item, "resource/x-bb-asmt-test-link"):
                     if item_id not in quiz_ids:
                         quiz_ids.add(item_id)
 
-                        title = (
-                            item.get("title")
-                            or "未命名测验"
-                        )
-
+                        title = item.get("title") or "未命名测验"
                         quizzes.append({
                             "id": item_id,
                             "title": title,
+                            "path": parent_path,
                         })
 
                         self.log(f"[测验识别] 找到测验：{title}")
 
-                # 只对可能是文件夹的内容继续递归。
-                if is_folder(item):
-                    if not walk(item_id):
+                # 只对文件下载页也认定为文件夹的内容继续递归。
+                if has_content_type(item, "resource/x-bb-folder"):
+                    folder_title = item.get("title") or "未命名课时"
+                    folder_path = parent_path + [folder_title]
+                    folders.append({
+                        "id": item_id,
+                        "title": folder_title,
+                        "path": folder_path,
+                    })
+                    if not walk(item_id, folder_path):
                         return False
 
             return True
@@ -466,6 +450,8 @@ class BlackboardAPI:
             f"[测验识别] 扫描完成，共找到 {len(quizzes)} 个测验。"
         )
 
+        if include_folders:
+            return {"quizzes": quizzes, "folders": folders}
         return quizzes
 
     # ------------------------------------------------------------------ 下载
