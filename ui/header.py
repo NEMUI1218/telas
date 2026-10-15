@@ -1,4 +1,6 @@
 """顶部栏：登录框（页0）/ 已登录状态（页1） + 课程选择。"""
+import re
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QStackedWidget,
@@ -40,6 +42,7 @@ class Header(QWidget):
     login_requested = Signal()
     switch_requested = Signal()
     course_selected = Signal(str, str)  # (course_id, course_name)
+    courses_loaded = Signal(object)
 
     def __init__(self, ctx, parent=None):
         super().__init__(parent)
@@ -47,6 +50,7 @@ class Header(QWidget):
         self.courses = {}
         self._logged_in = False
         self._build_ui()
+        self.courses_loaded.connect(self._populate_courses)
         self.retranslate()
 
     def tr(self, key, *args):
@@ -115,11 +119,19 @@ class Header(QWidget):
         logged_layout.addWidget(self.switch_btn)
 
         # ---- 共用课程选择（放在 stack 之后） ----
+        self.prefix_label = QLabel()
+        self.prefix_label.setObjectName("field_label")
+        self.prefix_cb = QComboBox()
+        self.prefix_cb.setFixedHeight(32)
+        self.prefix_cb.setMinimumWidth(110)
+        self.prefix_cb.setMaximumWidth(160)
+        self.prefix_cb.currentIndexChanged.connect(self._on_prefix_changed)
+
         self.course_label = QLabel()
         self.course_label.setObjectName("field_label")
         self.course_cb = QComboBox()
         self.course_cb.setFixedHeight(32)
-        self.course_cb.setMinimumWidth(200)
+        self.course_cb.setMinimumWidth(160)
         self.course_cb.setMaximumWidth(400)
         self.course_cb.currentIndexChanged.connect(self._on_course_index_changed)
 
@@ -129,6 +141,10 @@ class Header(QWidget):
 
         # 课程选择始终可见，追加到 stack 右侧
         root.addSpacing(16)
+        root.addWidget(self.prefix_label)
+        root.addSpacing(6)
+        root.addWidget(self.prefix_cb, 1)
+        root.addSpacing(10)
         root.addWidget(self.course_label)
         root.addSpacing(8)
         root.addWidget(self.course_cb, 2)
@@ -139,7 +155,15 @@ class Header(QWidget):
             text = self.tr(key).rstrip(":： ")
             widget.setPlaceholderText(text)
             widget.setToolTip(text)
-        self.course_label.setText(self.tr("course"))
+        self.course_label.setText(self.tr("course_name"))
+        self.prefix_label.setText(self.tr("prefix_filter"))
+        if self.prefix_cb.count():
+            self.prefix_cb.setItemText(0, self.tr("all_terms"))
+            for index in range(1, self.prefix_cb.count()):
+                if self.prefix_cb.itemData(index) == "__other__":
+                    self.prefix_cb.setItemText(index, self.tr("other_term"))
+        if self.course_cb.count():
+            self.course_cb.setItemText(0, self.tr("placeholder_course"))
         self.switch_btn.setText(self.tr("switch_account"))
         if self.login_btn.isEnabled():
             self.login_btn.setText(self.tr("login_btn"))
@@ -166,6 +190,9 @@ class Header(QWidget):
         self.user_input.clear()
         self.pwd_input.clear()
         self.courses = {}
+        self.prefix_cb.blockSignals(True)
+        self.prefix_cb.clear()
+        self.prefix_cb.blockSignals(False)
         self.course_cb.blockSignals(True)
         self.course_cb.clear()
         self.course_cb.blockSignals(False)
@@ -180,9 +207,76 @@ class Header(QWidget):
         self.login_btn.setText(self.tr("login_busy") if busy else self.tr("login_btn"))
 
     def set_courses(self, courses):
+        # 课程通常从后台线程加载，通过信号在 GUI 线程更新两个下拉框。
+        self.courses_loaded.emit(courses or {})
+
+    @staticmethod
+    def _term_prefix(course_name):
+        match = re.match(r"^\s*(\d{4}(?:年度)?\s*(?:前期|後期|后期))", course_name)
+        return re.sub(r"\s+", "", match.group(1)) if match else None
+
+    def _populate_courses(self, courses):
         self.courses = courses
-        self.ctx.signals.set_combo_items.emit(
-            self.course_cb, list(courses.keys()), -1, "placeholder_course")
+        names = list(courses.keys())
+        terms = {
+            term for name in names
+            if (term := self._term_prefix(name)) is not None
+        }
+        terms = sorted(
+            terms,
+            key=lambda term: (
+                int(re.search(r"\d{4}", term).group()),
+                2 if ("後期" in term or "后期" in term) else 1,
+            ),
+            reverse=True,
+        )
+
+        self.prefix_cb.blockSignals(True)
+        self.prefix_cb.clear()
+        self.prefix_cb.addItem(self.tr("all_terms"), "")
+        for term in terms:
+            self.prefix_cb.addItem(term, term)
+        if any(self._term_prefix(name) is None for name in names):
+            self.prefix_cb.addItem(self.tr("other_term"), "__other__")
+        # 默认收窄到最近学期；仍可随时切回“全部学期”。
+        self.prefix_cb.setCurrentIndex(1 if terms else 0)
+        self.prefix_cb.blockSignals(False)
+        self._rebuild_course_options()
+
+    def _rebuild_course_options(self):
+        term = self.prefix_cb.currentData() or ""
+        if term == "__other__":
+            names = [name for name in self.courses if self._term_prefix(name) is None]
+        elif term:
+            names = [
+                name for name in self.courses
+                if self._term_prefix(name) == term
+            ]
+        else:
+            names = list(self.courses)
+
+        old_name = self.course_cb.currentText() if self.course_cb.currentIndex() > 0 else ""
+        self.course_cb.blockSignals(True)
+        self.course_cb.clear()
+        self.course_cb.addItem(self.tr("placeholder_course"))
+        self.course_cb.addItems(names)
+        if old_name in names:
+            self.course_cb.setCurrentIndex(names.index(old_name) + 1)
+        else:
+            self.course_cb.setCurrentIndex(0)
+        self.course_cb.blockSignals(False)
+
+        self.course_cb.setItemData(
+            0,
+            False,
+            Qt.ItemDataRole.UserRole - 1,
+        )
+
+        if old_name and old_name not in names:
+            self.course_selected.emit("", "")
+
+    def _on_prefix_changed(self, _index):
+        self._rebuild_course_options()
 
     def _on_course_index_changed(self):
         idx = self.course_cb.currentIndex()
