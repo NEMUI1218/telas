@@ -215,6 +215,17 @@ class Header(QWidget):
         match = re.match(r"^\s*(\d{4}(?:年度)?\s*(?:前期|後期|后期))", course_name)
         return re.sub(r"\s+", "", match.group(1)) if match else None
 
+    @classmethod
+    def _display_course_name(cls, course_name):
+        """课程下拉框只显示名称，学期前缀由左侧筛选框显示。"""
+        if cls._term_prefix(course_name) is None:
+            return course_name
+        return re.sub(
+            r"^\s*\d{4}(?:年度)?\s*(?:前期|後期|后期)\s*",
+            "",
+            course_name,
+        ).strip()
+
     def _populate_courses(self, courses):
         self.courses = courses
         names = list(courses.keys())
@@ -255,11 +266,12 @@ class Header(QWidget):
         else:
             names = list(self.courses)
 
-        old_name = self.course_cb.currentText() if self.course_cb.currentIndex() > 0 else ""
+        old_name = self.course_cb.currentData() if self.course_cb.currentIndex() > 0 else ""
         self.course_cb.blockSignals(True)
         self.course_cb.clear()
         self.course_cb.addItem(self.tr("placeholder_course"))
-        self.course_cb.addItems(names)
+        for name in names:
+            self.course_cb.addItem(self._display_course_name(name), name)
         if old_name in names:
             self.course_cb.setCurrentIndex(names.index(old_name) + 1)
         else:
@@ -282,7 +294,7 @@ class Header(QWidget):
         idx = self.course_cb.currentIndex()
         if idx <= 0:
             return
-        name = self.course_cb.currentText()
+        name = self.course_cb.currentData()
         if name in self.courses:
             self.course_selected.emit(self.courses[name]["id"], name)
 
