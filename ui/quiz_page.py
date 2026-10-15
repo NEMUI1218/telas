@@ -30,14 +30,17 @@ class QuizPage(QWidget):
         self._signals.finished.connect(self._on_quizzes_loaded)
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
-        self.title_label = QLabel()
-        self.title_label.setObjectName("pageTitle")
-        layout.addWidget(self.title_label)
-
-        toolbar = QHBoxLayout()
+        self.toolbar_widget = QWidget()
+        toolbar = QHBoxLayout(self.toolbar_widget)
+        toolbar.setContentsMargins(0, 0, 0, 0)
         self.status_label = QLabel()
+        self.status_label.setFixedHeight(34)
+        self.status_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         toolbar.addWidget(self.status_label)
         toolbar.addStretch()
 
@@ -46,7 +49,7 @@ class QuizPage(QWidget):
         self.refresh_btn.setFixedSize(110, 34)
         self.refresh_btn.clicked.connect(self.refresh_quizzes)
         toolbar.addWidget(self.refresh_btn)
-        layout.addLayout(toolbar)
+        layout.addWidget(self.toolbar_widget)
 
         self.quiz_tree = QTreeWidget()
         self.quiz_tree.setColumnCount(4)
@@ -68,15 +71,27 @@ class QuizPage(QWidget):
         self.quiz_tree.header().resizeSection(1, 110)
         self.quiz_tree.header().resizeSection(2, 90)
         self.quiz_tree.header().resizeSection(3, 90)
-        layout.addWidget(self.quiz_tree, 1)
+        tree_container = QWidget()
+        tree_layout = QHBoxLayout(tree_container)
+        tree_layout.setContentsMargins(9, 0, 9, 0)
+        tree_layout.setSpacing(0)
+        tree_layout.addWidget(self.quiz_tree)
+        layout.addWidget(tree_container, 1)
+
+        self.empty_label = QLabel()
+        self.empty_label.setObjectName("empty_state")
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label.setWordWrap(True)
+        layout.addWidget(self.empty_label, 1)
 
         self.ctx.signals.course_changed.connect(self.on_course_changed)
         self.ctx.signals.login_state.connect(self._on_login_state)
         self.retranslate()
+        self._set_idle_state(not bool(self.ctx.current_course_id))
 
     def retranslate(self):
-        self.title_label.setText(self.ctx.tr("tab_quiz"))
         self.refresh_btn.setText(self.ctx.tr("refresh"))
+        self.empty_label.setText(self.ctx.tr("empty_state"))
         self.quiz_tree.setHeaderLabels([
             self.ctx.tr("quiz_col_name"),
             self.ctx.tr("quiz_col_attempts"),
@@ -101,6 +116,11 @@ class QuizPage(QWidget):
     def on_course_changed(self, _course_id, _course_name):
         self.refresh_quizzes()
 
+    def _set_idle_state(self, idle):
+        self.toolbar_widget.setVisible(not idle)
+        self.quiz_tree.setVisible(not idle)
+        self.empty_label.setVisible(idle)
+
     def refresh_quizzes(self):
         self._has_loaded = True
         self._request_id += 1
@@ -109,9 +129,10 @@ class QuizPage(QWidget):
 
         course_id = str(self.ctx.current_course_id or "")
         if not course_id:
-            self.status_label.setText(self.ctx.tr("select_course_first"))
+            self._set_idle_state(True)
             return
 
+        self._set_idle_state(False)
         self.status_label.setText(self.ctx.tr("quiz_loading"))
         self.refresh_btn.setEnabled(False)
         epoch = self.ctx.account_epoch
