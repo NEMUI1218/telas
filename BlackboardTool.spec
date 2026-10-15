@@ -7,13 +7,14 @@
 #
 # 只能在哪个系统上打哪个系统的包。Mac 版可以交给 GitHub Actions（.github/workflows/build.yml）。
 import sys
+from PyInstaller.utils.hooks import collect_submodules
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    # 显式收录下载页模块，避免打包后 main_window 无法导入。
-    hiddenimports=['ui.download_page'],
+    # 显式收录整个 UI 包，避免打包后漏掉某个页面模块。
+    hiddenimports=collect_submodules('ui'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
