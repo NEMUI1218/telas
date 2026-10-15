@@ -58,7 +58,7 @@ class QuizPage(QWidget):
             1, QHeaderView.ResizeMode.ResizeToContents
         )
         self.quiz_tree.header().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Stretch
+            2, QHeaderView.ResizeMode.ResizeToContents
         )
         layout.addWidget(self.quiz_tree, 1)
 
@@ -72,8 +72,8 @@ class QuizPage(QWidget):
         self.refresh_btn.setText(self.ctx.tr("refresh"))
         self.quiz_tree.setHeaderLabels([
             self.ctx.tr("quiz_col_name"),
-            self.ctx.tr("col_type"),
             self.ctx.tr("col_url"),
+            self.ctx.tr("col_type"),
         ])
 
     def showEvent(self, event):
@@ -143,7 +143,7 @@ class QuizPage(QWidget):
 
         lessons = {}
 
-        def ensure_lesson(path, url=""):
+        def ensure_lesson(path):
             if not path:
                 return None
 
@@ -151,6 +151,7 @@ class QuizPage(QWidget):
             if lesson_name not in lessons:
                 lesson_item = QTreeWidgetItem([
                     lesson_name,
+                    "",
                     self.ctx.tr("type_lesson"),
                 ])
                 lesson_item.setData(
@@ -161,22 +162,20 @@ class QuizPage(QWidget):
                 self.quiz_tree.addTopLevelItem(lesson_item)
                 lessons[lesson_name] = lesson_item
 
-            lesson_item = lessons[lesson_name]
-            if url:
-                self._set_url_cell(lesson_item, url)
-            return lesson_item
+            return lessons[lesson_name]
 
         # 只把课程目录下的第一层文件夹作为课时显示。
-        # 更深层的资料文件夹由文件下载页展示。
+        # 更深层的资料文件夹继续由文件下载页展示。
         for folder in folder_list:
             path = folder.get("path", [])
             if len(path) == 1:
-                ensure_lesson(path, folder.get("url", ""))
+                ensure_lesson(path)
 
         for quiz in quiz_list:
             parent = ensure_lesson(quiz.get("path", []))
             quiz_item = QTreeWidgetItem([
                 quiz.get("title") or self.ctx.tr("unnamed_quiz"),
+                "",
                 self.ctx.tr("quiz_type"),
             ])
             quiz_item.setData(
@@ -202,6 +201,7 @@ class QuizPage(QWidget):
                     QTreeWidgetItem([
                         self.ctx.tr("no_quiz_for_lesson"),
                         "",
+                        "",
                     ])
                 )
             lesson_item.setExpanded(True)
@@ -219,7 +219,7 @@ class QuizPage(QWidget):
 
         safe_url = html.escape(url, quote=True)
         link_label = QLabel(
-            f'<a href="{safe_url}">{html.escape(url)}</a>'
+            f'<a href="{safe_url}">{html.escape(self.ctx.tr("open"))}</a>'
         )
         link_label.setTextFormat(Qt.TextFormat.RichText)
         link_label.setTextInteractionFlags(
@@ -227,4 +227,4 @@ class QuizPage(QWidget):
         )
         link_label.setOpenExternalLinks(True)
         link_label.setToolTip(url)
-        self.quiz_tree.setItemWidget(item, 2, link_label)
+        self.quiz_tree.setItemWidget(item, 1, link_label)
