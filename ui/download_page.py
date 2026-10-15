@@ -99,17 +99,22 @@ class DownloadPage(QWidget):
 
         # 文件树
         self.file_tree = QTreeWidget()
-        self.file_tree.setColumnCount(3)
+        self.file_tree.setColumnCount(2)
         self.file_tree.setAlternatingRowColors(True)
         self.file_tree.setIndentation(22)
         header = self.file_tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(2, 90)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(1, 90)
         self.file_tree.itemChanged.connect(self._on_tree_item_changed)
-        active_layout.addWidget(self.file_tree, 1)
+        # 仅给文件列表加与测验页相同的左右边距，保持上方工具栏宽度不变。
+        tree_container = QWidget()
+        tree_layout = QHBoxLayout(tree_container)
+        tree_layout.setContentsMargins(9, 0, 9, 0)
+        tree_layout.setSpacing(0)
+        tree_layout.addWidget(self.file_tree)
+        active_layout.addWidget(tree_container, 1)
 
         # 进度条：只在下载时出现，贴着文件树下方
         self.download_progress = QProgressBar()
@@ -136,8 +141,8 @@ class DownloadPage(QWidget):
         header = self.file_tree.headerItem()
         if header:
             header.setText(0, self.tr("col_name"))
-            header.setText(1, self.tr("col_url"))
-            header.setText(2, self.tr("col_type"))
+            header.setText(1, self.tr("col_type"))
+            header.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
 
     def _save_path_setting(self):
         self.ctx.settings.set("save_path", self.save_path_input.text().strip())
@@ -202,39 +207,98 @@ class DownloadPage(QWidget):
 
     def _add_tree_items(self, parent, nodes):
         for node in nodes:
+            name = node.get("name", "")
             item = QTreeWidgetItem()
             item.setCheckState(0, Qt.CheckState.Unchecked)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsAutoTristate)
-            item.setText(0, node.get("name", ""))
+            item.setText(0, "")
             item.setData(0, Qt.ItemDataRole.UserRole, node.get("url", ""))
             item.setData(0, Qt.ItemDataRole.UserRole + 1, node.get("type", "other"))
+            item.setData(0, Qt.ItemDataRole.UserRole + 2, name)
             type_key = {
                 "lesson": "type_lesson",
                 "file": "type_file",
                 "other": "type_other",
             }.get(node.get("type"), "type_other")
-            item.setText(2, self.tr(type_key))
+            item.setText(1, self.tr(type_key))
+            item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
             if parent is self.file_tree:
                 parent.addTopLevelItem(item)
             else:
                 parent.addChild(item)
-            self._set_url_cell(item, node.get("link", ""))
+            self._set_name_and_url(item, name, node.get("link", ""))
             self._add_tree_items(item, node.get("children", []))
 
-    def _set_url_cell(self, item, url):
-        if not url:
-            return
-        safe_url = html.escape(url, quote=True)
-        link_label = QLabel(
-            f'<a href="{safe_url}">{html.escape(self.tr("open"))}</a>'
+    def _set_name_and_url(self, item, name, url):
+        cell = QWidget()
+        cell_layout = QHBoxLayout(cell)
+        cell_layout.setContentsMargins(0, 0, 0, 0)
+        cell_layout.setSpacing(8)
+
+        checkbox = QCheckBox()
+        # 半选状态由树同步设置；点击时仍按普通两态复选框切换。
+        checkbox.setTristate(False)
+        checkbox.setCheckState(item.checkState(0))
+        checkbox.stateChanged.connect(
+            lambda state, current=item: self._on_item_checkbox_changed(
+                current, state
+            )
         )
-        link_label.setTextFormat(Qt.TextFormat.RichText)
-        link_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextBrowserInteraction
-        )
-        link_label.setOpenExternalLinks(True)
-        link_label.setToolTip(url)
-        self.file_tree.setItemWidget(item, 1, link_label)
+        cell_layout.addWidget(checkbox)
+
+        name_label = QLabel(name)
+        name_label.setTextFormat(Qt.TextFormat.PlainText)
+        cell_layout.addWidget(name_label)
+
+        if url:
+            safe_url = html.escape(url, quote=True)
+            link_label = QLabel(
+                f'<a href="{safe_url}">{html.escape(self.tr("open"))}</a>'
+            )
+            link_label.setTextFormat(Qt.TextFormat.RichText)
+            link_label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextBrowserInteraction
+            )
+            link_label.setOpenExternalLinks(True)
+            link_label.setToolTip(url)
+            cell_layout.addWidget(link_label)
+
+        cell_layout.addStretch(1)
+
+        self.file_tree.setItemWidget(item, 0, cell)
+
+    def _on_item_checkbox_changed(self, item, state):
+        check_state = Qt.CheckState(state)
+        self.file_tree.blockSignals(True)
+        item.setCheckState(0, check_state)
+
+        if check_state != Qt.CheckState.PartiallyChecked:
+            def set_descendants(parent):
+                for index in range(parent.childCount()):
+                    child = parent.child(index)
+                    child.setCheckState(0, check_state)
+                    set_descendants(child)
+
+            set_descendants(item)
+
+        self._update_parent_state(item)
+        self.file_tree.blockSignals(False)
+        self._sync_tree_checkboxes()
+        self._update_select_all_state()
+
+    def _sync_tree_checkboxes(self):
+        def sync(item):
+            cell = self.file_tree.itemWidget(item, 0)
+            checkbox = cell.findChild(QCheckBox) if cell else None
+            if checkbox:
+                checkbox.blockSignals(True)
+                checkbox.setCheckState(item.checkState(0))
+                checkbox.blockSignals(False)
+            for index in range(item.childCount()):
+                sync(item.child(index))
+
+        for index in range(self.file_tree.topLevelItemCount()):
+            sync(self.file_tree.topLevelItem(index))
 
     def _on_tree_item_changed(self, item, column):
         if column != 0:
@@ -242,6 +306,7 @@ class DownloadPage(QWidget):
         self.file_tree.blockSignals(True)
         self._update_parent_state(item)
         self.file_tree.blockSignals(False)
+        self._sync_tree_checkboxes()
         self._update_select_all_state()
 
     def _update_parent_state(self, item):
@@ -249,14 +314,18 @@ class DownloadPage(QWidget):
         if parent is None:
             return
         checked = 0
+        partial = 0
         total = parent.childCount()
         for i in range(total):
-            if parent.child(i).checkState(0) == Qt.CheckState.Checked:
+            state = parent.child(i).checkState(0)
+            if state == Qt.CheckState.Checked:
                 checked += 1
-        if checked == 0:
-            parent.setCheckState(0, Qt.CheckState.Unchecked)
-        elif checked == total:
+            elif state == Qt.CheckState.PartiallyChecked:
+                partial += 1
+        if checked == total:
             parent.setCheckState(0, Qt.CheckState.Checked)
+        elif checked == 0 and partial == 0:
+            parent.setCheckState(0, Qt.CheckState.Unchecked)
         else:
             parent.setCheckState(0, Qt.PartiallyChecked)
         self._update_parent_state(parent)
@@ -287,9 +356,15 @@ class DownloadPage(QWidget):
             state = 2
         self.file_tree.blockSignals(True)
         check_state = Qt.CheckState.Checked if state == 2 else Qt.CheckState.Unchecked
+        def set_descendants(item):
+            item.setCheckState(0, check_state)
+            for index in range(item.childCount()):
+                set_descendants(item.child(index))
+
         for i in range(self.file_tree.topLevelItemCount()):
-            self.file_tree.topLevelItem(i).setCheckState(0, check_state)
+            set_descendants(self.file_tree.topLevelItem(i))
         self.file_tree.blockSignals(False)
+        self._sync_tree_checkboxes()
 
     def _get_checked_urls(self):
         results = []
@@ -304,7 +379,7 @@ class DownloadPage(QWidget):
                 and item.data(0, Qt.ItemDataRole.UserRole + 1) == "file"
             ):
                 url = item.data(0, Qt.ItemDataRole.UserRole)
-                name = item.text(0)
+                name = item.data(0, Qt.ItemDataRole.UserRole + 2) or ""
                 if url:
                     results.append((name, url))
         else:
