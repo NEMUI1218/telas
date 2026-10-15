@@ -14,6 +14,7 @@ from utils.theme import apply_theme
 from ui.header import Header
 from ui.sidebar import Sidebar
 from ui.download_page import DownloadPage
+from ui.quiz_page import QuizPage
 from ui.settings_page import SettingsPage
 
 
@@ -58,10 +59,15 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.header)
 
         self.stack = QStackedWidget()
+
         self.download_page = DownloadPage(self.ctx)
+        self.quiz_page = QuizPage(self.ctx)
         self.settings_page = SettingsPage(self.ctx)
-        self.stack.addWidget(self.download_page)
-        self.stack.addWidget(self.settings_page)
+
+        self.stack.addWidget(self.download_page)  # 索引 0
+        self.stack.addWidget(self.quiz_page)       # 索引 1
+        self.stack.addWidget(self.settings_page)  # 索引 2
+
         right_layout.addWidget(self.stack, 1)
 
         # ---- 底栏：状态行 + 可折叠日志 ----
@@ -114,6 +120,7 @@ class MainWindow(QMainWindow):
         # ---- 快捷键 ----
         QShortcut(QKeySequence("Ctrl+1"), self, lambda: self._switch_page(0))
         QShortcut(QKeySequence("Ctrl+2"), self, lambda: self._switch_page(1))
+        QShortcut(QKeySequence("Ctrl+3"), self, lambda: self._switch_page(2))
         QShortcut(QKeySequence("Ctrl+L"), self, self._focus_login)
         QShortcut(QKeySequence("Ctrl+Q"), self, self.close)
 
@@ -148,11 +155,16 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.download_page)
 
     def _switch_page(self, idx):
-        pages = [self.download_page, self.settings_page]
+        pages = [
+            self.download_page,
+            self.quiz_page,
+            self.settings_page,
+        ]
+
         if 0 <= idx < len(pages):
             self.stack.setCurrentWidget(pages[idx])
             self.sidebar.group.button(idx).setChecked(True)
-
+            
     # ------------------------------------------------------------- 通用信号处理
     def _append_log(self, text):
         self.log_area.append(text)
@@ -382,6 +394,7 @@ class MainWindow(QMainWindow):
         self.header.retranslate()
         self.sidebar.retranslate()
         self.download_page.retranslate()
+        self.quiz_page.retranslate()
         self.settings_page.retranslate()
         self.clear_log_btn.setText(self.tr("clear_log"))
         self.log_area.setPlaceholderText(self.tr("status_ready"))
