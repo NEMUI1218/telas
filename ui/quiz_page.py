@@ -55,11 +55,12 @@ class QuizPage(QWidget):
             0, QHeaderView.ResizeMode.Stretch
         )
         self.quiz_tree.header().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.ResizeToContents
+            1, QHeaderView.ResizeMode.Stretch
         )
         self.quiz_tree.header().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Stretch
+            2, QHeaderView.ResizeMode.Fixed
         )
+        self.quiz_tree.header().resizeSection(2, 90)
         layout.addWidget(self.quiz_tree, 1)
 
         self.ctx.signals.course_changed.connect(self.on_course_changed)
