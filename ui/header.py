@@ -278,12 +278,6 @@ class Header(QWidget):
             self.course_cb.setCurrentIndex(0)
         self.course_cb.blockSignals(False)
 
-        self.course_cb.setItemData(
-            0,
-            False,
-            Qt.ItemDataRole.UserRole - 1,
-        )
-
         if old_name and old_name not in names:
             self.course_selected.emit("", "")
 
@@ -293,6 +287,8 @@ class Header(QWidget):
     def _on_course_index_changed(self):
         idx = self.course_cb.currentIndex()
         if idx <= 0:
+            # 占位项代表“无指定课程”，允许用户切回待机状态。
+            self.course_selected.emit("", "")
             return
         name = self.course_cb.currentData()
         if name in self.courses:
