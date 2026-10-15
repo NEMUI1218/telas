@@ -1,4 +1,4 @@
-"""左侧导航栏：模块切换（文件下载 / 设置）。"""
+"""左侧导航栏：模块切换（测验 / 文件下载 / 设置）。"""
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QButtonGroup, QLabel
 
@@ -26,8 +26,8 @@ class Sidebar(QWidget):
         self.btn_quiz = QPushButton()
         self.btn_settings = QPushButton()
         self._nav_buttons = [
-            (self.btn_download, "download", "tab_download"),
             (self.btn_quiz, "quiz", "tab_quiz"),
+            (self.btn_download, "download", "tab_download"),
             (self.btn_settings, "settings", "tab_settings"),
         ]
 
