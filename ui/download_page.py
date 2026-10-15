@@ -1,4 +1,3 @@
-
 """文件下载页：保存路径 + 扫描 + 勾选文件树 + 下载进度。"""
 import html
 import os
@@ -29,7 +28,11 @@ class DownloadPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        # ---- 内容栈：空态 / 实际操作区 ----
         self.content_stack = QStackedWidget()
+
+        # 页 0：空态提示
         empty_page = QWidget()
         empty_layout = QVBoxLayout(empty_page)
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -38,15 +41,20 @@ class DownloadPage(QWidget):
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(self.empty_label)
         self.content_stack.addWidget(empty_page)
+
+        # 页 1：实际操作
         active_page = QWidget()
         active_layout = QVBoxLayout(active_page)
         active_layout.setContentsMargins(0, 0, 0, 0)
         active_layout.setSpacing(10)
+
+        # 保存路径：一行，标签在左
         path_layout = QHBoxLayout()
         path_layout.setSpacing(8)
         self.save_label = QLabel()
         self.save_label.setObjectName("field_label")
         path_layout.addWidget(self.save_label)
+
         self.save_path_input = QLineEdit()
         default_path = self.ctx.settings.get("save_path") or os.path.join(
             os.path.expanduser("~"), "Downloads", "Blackboard_download")
@@ -55,30 +63,41 @@ class DownloadPage(QWidget):
         self.save_path_input.setPlaceholderText("")
         self.save_path_input.editingFinished.connect(self._save_path_setting)
         path_layout.addWidget(self.save_path_input, 1)
-        self.browse_btn = QPushButton()
-        self.browse_btn.setObjectName("secondary")
-        self.browse_btn.setFixedHeight(32)
-        self.browse_btn.clicked.connect(self._browse_path)
-        path_layout.addWidget(self.browse_btn)
+
+        browse_btn = QPushButton()
+        self.browse_btn = browse_btn
+        browse_btn.setObjectName("secondary")
+        browse_btn.setFixedHeight(32)
+        browse_btn.clicked.connect(self._browse_path)
+        path_layout.addWidget(browse_btn)
         active_layout.addLayout(path_layout)
+
+        # 工具行：左边全选，右边扫描（次要）和下载（主要）
         action_layout = QHBoxLayout()
         action_layout.setSpacing(8)
+
         self.select_all_cb = QCheckBox()
         self.select_all_cb.setTristate(True)
         self.select_all_cb.setChecked(False)
         self.select_all_cb.stateChanged.connect(self._on_select_all)
         action_layout.addWidget(self.select_all_cb)
         action_layout.addStretch()
-        self.scan_btn = QPushButton()
-        self.scan_btn.setObjectName("secondary")
-        self.scan_btn.setFixedHeight(34)
-        self.scan_btn.clicked.connect(self._start_scan)
-        action_layout.addWidget(self.scan_btn)
-        self.download_btn = QPushButton()
-        self.download_btn.setFixedHeight(34)
-        self.download_btn.clicked.connect(self._start_download_selected)
-        action_layout.addWidget(self.download_btn)
+
+        scan_btn = QPushButton()
+        self.scan_btn = scan_btn
+        scan_btn.setObjectName("secondary")
+        scan_btn.setFixedSize(110, 34)
+        scan_btn.clicked.connect(self._start_scan)
+        action_layout.addWidget(scan_btn)
+
+        download_btn = QPushButton()
+        self.download_btn = download_btn
+        download_btn.setFixedSize(110, 34)
+        download_btn.clicked.connect(self._start_download_selected)
+        action_layout.addWidget(download_btn)
         active_layout.addLayout(action_layout)
+
+        # 文件树
         self.file_tree = QTreeWidget()
         self.file_tree.setColumnCount(3)
         self.file_tree.setAlternatingRowColors(True)
@@ -91,6 +110,8 @@ class DownloadPage(QWidget):
         header.resizeSection(2, 90)
         self.file_tree.itemChanged.connect(self._on_tree_item_changed)
         active_layout.addWidget(self.file_tree, 1)
+
+        # 进度条：只在下载时出现，贴着文件树下方
         self.download_progress = QProgressBar()
         self.download_progress.setRange(0, 100)
         self.download_progress.setValue(0)
@@ -98,16 +119,18 @@ class DownloadPage(QWidget):
         self.download_progress.setFormat("%v / %m")
         self.download_progress.setVisible(False)
         active_layout.addWidget(self.download_progress)
+
         self.content_stack.addWidget(active_page)
         self.content_stack.setCurrentIndex(0)
         layout.addWidget(self.content_stack, 1)
+
         self.retranslate()
 
     def retranslate(self):
         self.save_label.setText(self.tr("save_group"))
         self.browse_btn.setText(self.tr("browse"))
-        self.scan_btn.setText(self.tr("scan_files"))
-        self.download_btn.setText(self.tr("download_selected"))
+        self.scan_btn.setText(self.tr("refresh"))
+        self.download_btn.setText(self.tr("download"))
         self.select_all_cb.setText(self.tr("select_all"))
         self.empty_label.setText(self.tr("empty_state"))
         header = self.file_tree.headerItem()
@@ -126,6 +149,7 @@ class DownloadPage(QWidget):
             self.save_path_input.setText(path)
             self._save_path_setting()
 
+    # ------------------------------------------------------------- 课程切换
     def on_course_changed(self, course_id, course_name):
         self.course_id = course_id
         self._start_scan()
@@ -154,7 +178,7 @@ class DownloadPage(QWidget):
         try:
             tree = self.ctx.downloader.scan_tree(self.course_id, "ROOT")
             if epoch != self.ctx.account_epoch:
-                return
+                return  # 扫描期间切换了账号，结果作废
             self.ctx.signals.populate_tree.emit(self.file_tree, tree)
             total = self.ctx.downloader.count_files(tree)
             self.ctx.log(self.tr("scan_done", total))
@@ -163,6 +187,7 @@ class DownloadPage(QWidget):
         finally:
             self.ctx.signals.set_busy.emit(self.scan_btn, False)
 
+    # ------------------------------------------------------------- 文件树
     def _populate_file_tree(self, tree_widget, nodes):
         tree_widget.blockSignals(True)
         tree_widget.clear()
@@ -171,6 +196,7 @@ class DownloadPage(QWidget):
         self.select_all_cb.blockSignals(True)
         self.select_all_cb.setCheckState(Qt.CheckState.Unchecked)
         self.select_all_cb.blockSignals(False)
+        # 有内容时切到操作页
         if nodes:
             self.content_stack.setCurrentIndex(1)
 
@@ -253,6 +279,7 @@ class DownloadPage(QWidget):
         self.select_all_cb.blockSignals(False)
 
     def _on_select_all(self, state):
+        # 用户点击不应停在「部分选中」：未选 -> 点击 -> 直接全选
         if state == 1:
             self.select_all_cb.blockSignals(True)
             self.select_all_cb.setCheckState(Qt.CheckState.Checked)
@@ -284,6 +311,7 @@ class DownloadPage(QWidget):
             for i in range(item.childCount()):
                 self._collect_checked(item.child(i), results)
 
+    # ------------------------------------------------------------- 下载
     def _start_download_selected(self):
         files = self._get_checked_urls()
         if not files:
