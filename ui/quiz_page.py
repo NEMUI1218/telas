@@ -42,6 +42,8 @@ class QuizPage(QWidget):
         toolbar.addStretch()
 
         self.refresh_btn = QPushButton()
+        self.refresh_btn.setObjectName("secondary")
+        self.refresh_btn.setFixedSize(110, 34)
         self.refresh_btn.clicked.connect(self.refresh_quizzes)
         toolbar.addWidget(self.refresh_btn)
         layout.addLayout(toolbar)
