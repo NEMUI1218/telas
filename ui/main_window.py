@@ -151,20 +151,20 @@ class MainWindow(QMainWindow):
         self.header.switch_requested.connect(self._on_switch_account)
         self.header.course_selected.connect(self._on_course_selected)
 
-        self.sidebar.btn_download.setChecked(True)
-        self.stack.setCurrentWidget(self.download_page)
+        self.sidebar.btn_quiz.setChecked(True)
+        self.stack.setCurrentWidget(self.quiz_page)
 
     def _switch_page(self, idx):
         pages = [
-            self.download_page,
             self.quiz_page,
+            self.download_page,
             self.settings_page,
         ]
 
         if 0 <= idx < len(pages):
             self.stack.setCurrentWidget(pages[idx])
             self.sidebar.group.button(idx).setChecked(True)
-            
+
     # ------------------------------------------------------------- 通用信号处理
     def _append_log(self, text):
         self.log_area.append(text)
@@ -383,6 +383,10 @@ class MainWindow(QMainWindow):
 
     def _on_course_selected(self, course_id, course_name):
         if not course_id:
+            self.ctx.current_course_id = ""
+            self.ctx.current_course_name = ""
+            self.download_page.reset()
+            self.ctx.signals.course_changed.emit("", "")
             return
         self.ctx.current_course_id = course_id
         self.ctx.current_course_name = course_name
