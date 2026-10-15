@@ -145,7 +145,7 @@ class BlackboardAPI:
 
         # 用真实的用户信息接口验证认证状态
         try:
-             response = self.session.get(
+            response = self.session.get(
                 BASE_URL + "/learn/api/v1/users/me",
                 headers={"Accept": "application/json"},
                 timeout=20
