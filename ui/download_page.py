@@ -211,6 +211,13 @@ class DownloadPage(QWidget):
             item = QTreeWidgetItem()
             item.setCheckState(0, Qt.CheckState.Unchecked)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsAutoTristate)
+            # 勾选框由名称单元格中的 QCheckBox 绘制；树项目只保存状态，
+            # 避免 Qt 再绘制一套原生复选框。
+            item.setFlags(
+                item.flags()
+                & ~Qt.ItemFlag.ItemIsUserCheckable
+                & ~Qt.ItemFlag.ItemIsAutoTristate
+            )
             item.setText(0, "")
             item.setData(0, Qt.ItemDataRole.UserRole, node.get("url", ""))
             item.setData(0, Qt.ItemDataRole.UserRole + 1, node.get("type", "other"))
