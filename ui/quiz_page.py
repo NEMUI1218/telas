@@ -58,7 +58,7 @@ class QuizPage(QWidget):
             1, QHeaderView.ResizeMode.ResizeToContents
         )
         self.quiz_tree.header().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.ResizeToContents
+            2, QHeaderView.ResizeMode.Stretch
         )
         layout.addWidget(self.quiz_tree, 1)
 
@@ -110,10 +110,7 @@ class QuizPage(QWidget):
 
     def _load_quizzes(self, course_id, request_id, epoch):
         try:
-            quizzes = self.ctx.api.get_course_quizzes(
-                course_id,
-                include_folders=True,
-            )
+            quizzes = self.ctx.api.get_course_quizzes(course_id, include_folders=True)
         except Exception as exc:
             quizzes = {"error": str(exc)}
         self._signals.finished.emit(course_id, quizzes, request_id, epoch)
@@ -146,7 +143,6 @@ class QuizPage(QWidget):
         def ensure_lesson(path):
             if not path:
                 return None
-
             lesson_name = path[0]
             if lesson_name not in lessons:
                 lesson_item = QTreeWidgetItem([
@@ -161,11 +157,10 @@ class QuizPage(QWidget):
                 )
                 self.quiz_tree.addTopLevelItem(lesson_item)
                 lessons[lesson_name] = lesson_item
-
             return lessons[lesson_name]
 
         # 只把课程目录下的第一层文件夹作为课时显示。
-        # 更深层的资料文件夹继续由文件下载页展示。
+        # 更深层的“授業用資料について”等资料文件夹继续由文件下载页展示。
         for folder in folder_list:
             path = folder.get("path", [])
             if len(path) == 1:
@@ -178,22 +173,17 @@ class QuizPage(QWidget):
                 "",
                 self.ctx.tr("quiz_type"),
             ])
-            quiz_item.setData(
-                0,
-                Qt.ItemDataRole.UserRole,
-                quiz.get("id", ""),
-            )
-            self._set_url_cell(quiz_item, quiz.get("url", ""))
-
+            quiz_item.setData(0, Qt.ItemDataRole.UserRole, quiz.get("id", ""))
             if parent is None:
                 self.quiz_tree.addTopLevelItem(quiz_item)
             else:
                 parent.addChild(quiz_item)
+            # QTreeWidget 只有在条目已加入树后才能设置单元格控件。
+            self._set_url_cell(quiz_item, quiz.get("url", ""))
 
         for lesson_name, lesson_item in lessons.items():
             has_quiz = any(
-                quiz.get("path")
-                and quiz["path"][0] == lesson_name
+                quiz.get("path") and quiz["path"][0] == lesson_name
                 for quiz in quiz_list
             )
             if not has_quiz:
@@ -216,7 +206,6 @@ class QuizPage(QWidget):
     def _set_url_cell(self, item, url):
         if not url:
             return
-
         safe_url = html.escape(url, quote=True)
         link_label = QLabel(
             f'<a href="{safe_url}">{html.escape(self.ctx.tr("open"))}</a>'
