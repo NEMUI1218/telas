@@ -479,8 +479,14 @@ def _palette(c):
 
 
 def apply_theme(app, theme="dark"):
-    """把主题样式应用到整个应用。theme: 'dark' 或 'light'。"""
+    """应用深色、浅色或系统主题。"""
     global _current
+    if theme == "system":
+        try:
+            scheme = app.styleHints().colorScheme()
+            theme = "light" if scheme == Qt.ColorScheme.Light else "dark"
+        except (AttributeError, RuntimeError):
+            theme = "dark"
     if theme not in PALETTES:
         theme = "dark"
     _current = theme
