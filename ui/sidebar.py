@@ -23,9 +23,11 @@ class Sidebar(QWidget):
         layout.addWidget(self.title_label)
 
         self.btn_download = QPushButton()
+        self.btn_quiz = QPushButton()
         self.btn_settings = QPushButton()
         self._nav_buttons = [
             (self.btn_download, "download", "tab_download"),
+            (self.btn_quiz, "quiz", "tab_quiz"),
             (self.btn_settings, "settings", "tab_settings"),
         ]
 
