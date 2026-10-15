@@ -13,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import quote, urlparse
 
-from services.content_types import has_content_type
+from services.content_types import get_content_url, has_content_type
 from utils.paths import data_path
 
 
@@ -327,12 +327,16 @@ class BlackboardAPI:
 
     # -------------------------------------------------------------- 测验识别
     def get_course_quizzes(self, course_id, include_folders=False):
-        """读取指定课程中的测验。
+        """读取指定课程中的测验，返回测验列表。
 
-        默认返回测验列表。include_folders=True 时同时返回课时文件夹。
+        返回格式：
+        [
+            {"id": "测验内容ID", "title": "测验名称"},
+            ...
+        ]
 
         如果读取失败，返回 None。
-        如果读取成功但没有测验，测验列表为空。
+        如果读取成功但没有测验，返回空列表。
         """
 
         if not course_id:
@@ -410,16 +414,23 @@ class BlackboardAPI:
                     if item_id not in quiz_ids:
                         quiz_ids.add(item_id)
 
-                        title = item.get("title") or "未命名测验"
+                        title = (
+                            item.get("title")
+                            or "未命名测验"
+                        )
+
                         quizzes.append({
                             "id": item_id,
                             "title": title,
                             "path": parent_path,
+                            "url": get_content_url(
+                                item, BASE_URL, course_id, content_id
+                            ),
                         })
 
                         self.log(f"[测验识别] 找到测验：{title}")
 
-                # 只对文件下载页也认定为文件夹的内容继续递归。
+                # 只对可能是文件夹的内容继续递归。
                 if has_content_type(item, "resource/x-bb-folder"):
                     folder_title = item.get("title") or "未命名课时"
                     folder_path = parent_path + [folder_title]
@@ -427,7 +438,11 @@ class BlackboardAPI:
                         "id": item_id,
                         "title": folder_title,
                         "path": folder_path,
+                        "url": get_content_url(
+                            item, BASE_URL, course_id, content_id
+                        ),
                     })
+
                     if not walk(item_id, folder_path):
                         return False
 
@@ -452,6 +467,7 @@ class BlackboardAPI:
 
         if include_folders:
             return {"quizzes": quizzes, "folders": folders}
+
         return quizzes
 
     # ------------------------------------------------------------------ 下载
