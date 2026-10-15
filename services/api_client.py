@@ -107,10 +107,46 @@ class BlackboardAPI:
 
     # ------------------------------------------------------------------ 请求
     def api(self, url):
-        r = self.session.get(url, headers={"Accept": "application/json"})
-        if r.status_code == 200:
-            return r.json()
-        return None
+        from urllib.parse import urlparse
+
+        try:
+            r = self.session.get(
+                url,
+                headers={"Accept": "application/json"},
+                timeout=20,
+            )
+
+            path = urlparse(url).path
+
+            self.log(f"[API] 请求路径: {path}")
+            self.log(f"[API] HTTP 状态码: {r.status_code}")
+            self.log(f"[API] 最终响应地址: {urlparse(r.url).path}")
+            self.log(f"[API] Content-Type: {r.headers.get('Content-Type', '')}")
+
+            if r.status_code == 200:
+                try:
+                    data = r.json()
+
+                    if isinstance(data, dict):
+                        self.log(f"[API] JSON 顶层字段: {list(data.keys())}")
+
+                        if isinstance(data.get("results"), list):
+                            self.log(f"[API] results 数量: {len(data['results'])}")
+                    else:
+                        self.log(f"[API] JSON 类型: {type(data).__name__}")
+
+                    return data
+
+                except ValueError:
+                    self.log("[API] 响应不是有效的 JSON")
+                    return None
+
+            self.log(f"[API] 请求失败，HTTP {r.status_code}")
+            return None
+
+        except requests.RequestException as e:
+            self.log(f"[API] 请求异常: {type(e).__name__}")
+            return None
 
     # ------------------------------------------------------------------ 数据
     def get_me(self):
