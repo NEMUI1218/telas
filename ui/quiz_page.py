@@ -66,7 +66,7 @@ class QuizPage(QWidget):
     def retranslate(self):
         self.title_label.setText(self.ctx.tr("tab_quiz"))
         self.refresh_btn.setText("刷新")
-        self.quiz_tree.setHeaderLabels(["课程 / 测验", "类型"])
+        self.quiz_tree.setHeaderLabels(["课时 / 测验", "类型"])
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -87,12 +87,11 @@ class QuizPage(QWidget):
         self.quiz_tree.clear()
 
         course_id = str(self.ctx.current_course_id or "")
-        course_name = self.ctx.current_course_name or ""
         if not course_id:
             self.status_label.setText("请先从主界面选择课程。")
             return
 
-        self.status_label.setText(f"正在读取“{course_name}”的测验…")
+        self.status_label.setText("正在读取当前课程的测验…")
         self.refresh_btn.setEnabled(False)
         epoch = self.ctx.account_epoch
         threading.Thread(
@@ -133,46 +132,32 @@ class QuizPage(QWidget):
         quiz_list = quizzes.get("quizzes", [])
         folder_list = quizzes.get("folders", [])
 
-        course_name = self.ctx.current_course_name or ""
-        course_item = QTreeWidgetItem([course_name, "课程"])
-        course_item.setData(0, Qt.ItemDataRole.UserRole, course_id)
-        self.quiz_tree.addTopLevelItem(course_item)
+        lessons = {}
 
-        folders = {}
+        def ensure_lesson(path):
+            if not path:
+                return None
+            lesson_name = path[0]
+            if lesson_name not in lessons:
+                lesson_item = QTreeWidgetItem([lesson_name, "课时"])
+                lesson_item.setData(
+                    0,
+                    Qt.ItemDataRole.UserRole,
+                    {"path": [lesson_name]},
+                )
+                self.quiz_tree.addTopLevelItem(lesson_item)
+                lessons[lesson_name] = lesson_item
+            return lessons[lesson_name]
+
+        # 只把课程目录下的第一层文件夹作为课时显示。
+        # 更深层的“授業用資料について”等资料文件夹继续由文件下载页展示。
         for folder in folder_list:
-            parent = course_item
-            accumulated = []
-            for folder_name in folder.get("path", []):
-                accumulated.append(folder_name)
-                key = tuple(accumulated)
-                if key not in folders:
-                    folder_item = QTreeWidgetItem([folder_name, "课时"])
-                    folder_item.setData(
-                        0,
-                        Qt.ItemDataRole.UserRole,
-                        {"path": list(key)},
-                    )
-                    parent.addChild(folder_item)
-                    folders[key] = folder_item
-                parent = folders[key]
+            path = folder.get("path", [])
+            if len(path) == 1:
+                ensure_lesson(path)
 
         for quiz in quiz_list:
-            parent = course_item
-            accumulated = []
-            for folder_name in quiz.get("path", []):
-                accumulated.append(folder_name)
-                key = tuple(accumulated)
-                if key not in folders:
-                    folder_item = QTreeWidgetItem([folder_name, "课时"])
-                    folder_item.setData(
-                        0,
-                        Qt.ItemDataRole.UserRole,
-                        {"path": list(key)},
-                    )
-                    parent.addChild(folder_item)
-                    folders[key] = folder_item
-                parent = folders[key]
-
+            parent = ensure_lesson(quiz.get("path", []))
             quiz_item = QTreeWidgetItem([
                 quiz.get("title") or "未命名测验",
                 "测试",
@@ -182,29 +167,25 @@ class QuizPage(QWidget):
                 Qt.ItemDataRole.UserRole,
                 quiz.get("id", ""),
             )
-            parent.addChild(quiz_item)
+            if parent is None:
+                self.quiz_tree.addTopLevelItem(quiz_item)
+            else:
+                parent.addChild(quiz_item)
 
-        course_item.setExpanded(True)
-        self.quiz_tree.expandAll()
-
-        for key, folder_item in folders.items():
-            contains_quiz = any(
-                tuple(quiz.get("path", [])[:len(key)]) == key
+        for lesson_name, lesson_item in lessons.items():
+            has_quiz = any(
+                quiz.get("path") and quiz["path"][0] == lesson_name
                 for quiz in quiz_list
             )
-            if not contains_quiz:
-                folder_item.addChild(
+            if not has_quiz:
+                lesson_item.addChild(
                     QTreeWidgetItem(["此课时未发现测试作业", ""])
                 )
+            lesson_item.setExpanded(True)
 
         if quiz_list:
             self.status_label.setText(
                 f"扫描完成，共找到 {len(quiz_list)} 个测验。"
             )
         else:
-            if not folders:
-                course_item.addChild(
-                    QTreeWidgetItem(["此课时未发现测试作业", ""])
-                )
             self.status_label.setText("扫描完成，当前课程没有测验。")
-        course_item.setExpanded(True)
