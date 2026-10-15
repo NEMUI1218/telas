@@ -69,8 +69,12 @@ class QuizPage(QWidget):
 
     def retranslate(self):
         self.title_label.setText(self.ctx.tr("tab_quiz"))
-        self.refresh_btn.setText("刷新")
-        self.quiz_tree.setHeaderLabels(["课时 / 测验", "类型", "URL"])
+        self.refresh_btn.setText(self.ctx.tr("refresh"))
+        self.quiz_tree.setHeaderLabels([
+            self.ctx.tr("quiz_col_name"),
+            self.ctx.tr("col_type"),
+            self.ctx.tr("col_url"),
+        ])
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -92,10 +96,10 @@ class QuizPage(QWidget):
 
         course_id = str(self.ctx.current_course_id or "")
         if not course_id:
-            self.status_label.setText("请先从主界面选择课程。")
+            self.status_label.setText(self.ctx.tr("select_course_first"))
             return
 
-        self.status_label.setText("正在读取当前课程的测验…")
+        self.status_label.setText(self.ctx.tr("quiz_loading"))
         self.refresh_btn.setEnabled(False)
         epoch = self.ctx.account_epoch
         threading.Thread(
@@ -125,12 +129,13 @@ class QuizPage(QWidget):
         self.refresh_btn.setEnabled(True)
         self.quiz_tree.clear()
         if quizzes is None or not isinstance(quizzes, dict):
-            error = "请查看 API 日志。"
-            self.status_label.setText(f"测验读取失败：{error}")
+            self.status_label.setText(self.ctx.tr("quiz_load_failed"))
             return
 
         if "error" in quizzes:
-            self.status_label.setText(f"测验读取失败：{quizzes['error']}")
+            self.status_label.setText(
+                self.ctx.tr("quiz_load_error", quizzes["error"])
+            )
             return
 
         quiz_list = quizzes.get("quizzes", [])
@@ -144,7 +149,10 @@ class QuizPage(QWidget):
 
             lesson_name = path[0]
             if lesson_name not in lessons:
-                lesson_item = QTreeWidgetItem([lesson_name, "课时"])
+                lesson_item = QTreeWidgetItem([
+                    lesson_name,
+                    self.ctx.tr("type_lesson"),
+                ])
                 lesson_item.setData(
                     0,
                     Qt.ItemDataRole.UserRole,
@@ -168,8 +176,8 @@ class QuizPage(QWidget):
         for quiz in quiz_list:
             parent = ensure_lesson(quiz.get("path", []))
             quiz_item = QTreeWidgetItem([
-                quiz.get("title") or "未命名测验",
-                "测试",
+                quiz.get("title") or self.ctx.tr("unnamed_quiz"),
+                self.ctx.tr("quiz_type"),
             ])
             quiz_item.setData(
                 0,
@@ -191,16 +199,19 @@ class QuizPage(QWidget):
             )
             if not has_quiz:
                 lesson_item.addChild(
-                    QTreeWidgetItem(["此课时未发现测试作业", ""])
+                    QTreeWidgetItem([
+                        self.ctx.tr("no_quiz_for_lesson"),
+                        "",
+                    ])
                 )
             lesson_item.setExpanded(True)
 
         if quiz_list:
             self.status_label.setText(
-                f"扫描完成，共找到 {len(quiz_list)} 个测验。"
+                self.ctx.tr("quiz_scan_done", len(quiz_list))
             )
         else:
-            self.status_label.setText("扫描完成，当前课程没有测验。")
+            self.status_label.setText(self.ctx.tr("quiz_scan_empty"))
 
     def _set_url_cell(self, item, url):
         if not url:
