@@ -408,7 +408,6 @@ class BlackboardAPI:
                     continue
 
                 item_id = str(item_id)
-
                 # 识别 Blackboard 测验链接。
                 if has_content_type(item, "resource/x-bb-asmt-test-link"):
                     if item_id not in quiz_ids:
@@ -442,7 +441,6 @@ class BlackboardAPI:
                             item, BASE_URL, course_id, content_id
                         ),
                     })
-
                     if not walk(item_id, folder_path):
                         return False
 
@@ -461,14 +459,134 @@ class BlackboardAPI:
             )
             return None
 
+        # Gradebook metadata and the current user's attempts are separate
+        # from course contents. Keep quiz discovery successful if this
+        # optional read is unavailable to the current Blackboard session.
+        if quizzes:
+            try:
+                self._attach_quiz_gradebook_data(
+                    course_id, encoded_course_id, quizzes
+                )
+            except Exception as exc:
+                self.log(
+                    "[测验识别] 读取成绩与答题次数失败："
+                    f"{type(exc).__name__}"
+                )
+
         self.log(
             f"[测验识别] 扫描完成，共找到 {len(quizzes)} 个测验。"
         )
 
         if include_folders:
             return {"quizzes": quizzes, "folders": folders}
-
         return quizzes
+
+    def _attach_quiz_gradebook_data(
+        self, course_id, encoded_course_id, quizzes
+    ):
+        """Best-effort: add score and attempt metadata for the logged-in user."""
+        user = self.get_me()
+        user_id = user.get("id") if isinstance(user, dict) else None
+        if not user_id:
+            self.log("[测验识别] 无法取得当前用户 ID，略过成绩簿数据。")
+            return
+
+        columns_url = (
+            f"{BASE_URL}/learn/api/public/v2/courses/"
+            f"{encoded_course_id}/gradebook/columns?limit=10000"
+        )
+        columns_data = self.api(columns_url)
+        columns = (
+            columns_data.get("results")
+            if isinstance(columns_data, dict)
+            else None
+        )
+        if not isinstance(columns, list):
+            self.log("[测验识别] 成绩簿接口未返回有效列清单。")
+            return
+
+        for quiz in quizzes:
+            quiz["gradebook_known"] = True
+
+        columns_by_content = {
+            str(column.get("contentId")): column
+            for column in columns
+            if isinstance(column, dict) and column.get("contentId")
+        }
+        encoded_user_id = quote(str(user_id), safe="")
+
+        for quiz in quizzes:
+            column = columns_by_content.get(str(quiz.get("id")))
+            if not column:
+                continue
+
+            score_info = column.get("score") or {}
+            quiz["points_possible"] = score_info.get("possible")
+            grading = column.get("grading") or {}
+            quiz["attempts_allowed"] = grading.get("attemptsAllowed")
+            quiz["attempts_allowed_known"] = (
+                "attemptsAllowed" in grading
+            )
+
+            column_id = column.get("id")
+            if not column_id:
+                continue
+
+            attempts_url = (
+                f"{BASE_URL}/learn/api/public/v2/courses/"
+                f"{encoded_course_id}/gradebook/columns/"
+                f"{quote(str(column_id), safe='')}/attempts"
+                f"?userId={encoded_user_id}&limit=10000"
+            )
+            attempts_data = self.api(attempts_url)
+            attempts = (
+                attempts_data.get("results", [])
+                if isinstance(attempts_data, dict)
+                else None
+            )
+            if not isinstance(attempts, list):
+                continue
+
+            # Filter locally too, in case this Blackboard version ignores
+            # the userId filter. Never display another student's result.
+            attempts = [
+                attempt for attempt in attempts
+                if isinstance(attempt, dict)
+                and str(attempt.get("userId", "")) == str(user_id)
+            ]
+            attempts.sort(
+                key=lambda attempt: (
+                    attempt.get("attemptDate")
+                    or attempt.get("modified")
+                    or attempt.get("created")
+                    or ""
+                )
+            )
+            quiz["attempts_known"] = True
+            quiz["attempt_count"] = len(attempts)
+
+            scored = []
+            for attempt in attempts:
+                display_grade = attempt.get("displayGrade") or {}
+                value = display_grade.get("score")
+                if value is None:
+                    value = attempt.get("score")
+                if isinstance(value, (int, float)):
+                    scored.append(value)
+
+            if scored:
+                scoring_model = grading.get("scoringModel", "Last")
+                if scoring_model == "First":
+                    earned = scored[0]
+                elif scoring_model == "Highest":
+                    earned = max(scored)
+                elif scoring_model == "Lowest":
+                    earned = min(scored)
+                elif scoring_model == "Average":
+                    earned = sum(scored) / len(scored)
+                else:
+                    earned = scored[-1]
+                quiz["points_earned"] = earned
 
     # ------------------------------------------------------------------ 下载
     def download_file(self, url, path):
