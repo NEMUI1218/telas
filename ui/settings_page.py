@@ -62,9 +62,12 @@ class SettingsPage(QWidget):
         self.theme_label.setText(self.tr("theme_label"))
         self.theme_cb.blockSignals(True)
         self.theme_cb.clear()
-        self.theme_cb.addItems([self.tr("theme_dark"), self.tr("theme_light")])
+        self.theme_cb.addItem(self.tr("theme_dark"), "dark")
+        self.theme_cb.addItem(self.tr("theme_light"), "light")
+        self.theme_cb.addItem(self.tr("theme_system"), "system")
         theme = self.ctx.settings.get("theme", "dark")
-        self.theme_cb.setCurrentIndex(1 if theme == "light" else 0)
+        index = self.theme_cb.findData(theme)
+        self.theme_cb.setCurrentIndex(index if index >= 0 else 0)
         self.theme_cb.blockSignals(False)
 
     def _on_lang_changed(self, idx):
@@ -75,7 +78,7 @@ class SettingsPage(QWidget):
         self.ctx.signals.language_changed.emit()
 
     def _on_theme_changed(self, idx):
-        theme = "light" if idx == 1 else "dark"
+        theme = self.theme_cb.itemData(idx) or "dark"
         self.ctx.settings.set("theme", theme)
         self.ctx.settings.save()
         apply_theme(QApplication.instance(), theme)
