@@ -1,195 +1,332 @@
-"""文件扫描与下载服务。纯逻辑，不依赖 Qt。"""
+
+"""文件下载页：保存路径 + 扫描 + 勾选文件树 + 下载进度。"""
+import html
 import os
-import re
+import threading
 
-from services.content_types import get_content_url, has_content_type
-
-
-BASE_URL = "https://lms2017.teikyo-u.ac.jp"
-
-
-def sanitize_name(name):
-    return re.sub(r'[\\/:*?"<>|]', "_", name)
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QCheckBox, QTreeWidget, QTreeWidgetItem, QFileDialog,
+    QProgressBar, QStackedWidget, QHeaderView,
+)
 
 
-class DownloadService:
-    def __init__(self, api):
-        self.api = api
+class DownloadPage(QWidget):
+    def __init__(self, ctx, parent=None):
+        super().__init__(parent)
+        self.ctx = ctx
+        self.course_id = ""
+        self._download_files = []
+        self._build_ui()
+        self.ctx.signals.course_changed.connect(self.on_course_changed)
+        self.ctx.signals.populate_tree.connect(self._populate_file_tree)
 
-    def scan_tree(self, course_id, content_id, depth=0):
-        url = (
-            f"{BASE_URL}/learn/api/v1/"
-            f"courses/{course_id}/contents/{content_id}/children"
-            "?@view=Summary&limit=1000"
-        )
-        data = self.api.api(url)
-        if not data:
-            return []
+    def tr(self, key, *args):
+        return self.ctx.tr(key, *args)
 
-        nodes = []
-        for item in data.get("results", []):
-            title = item.get("title", "")
-            detail = item.get("contentDetail", {}) or {}
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.content_stack = QStackedWidget()
+        empty_page = QWidget()
+        empty_layout = QVBoxLayout(empty_page)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label = QLabel()
+        self.empty_label.setObjectName("empty_state")
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(self.empty_label)
+        self.content_stack.addWidget(empty_page)
+        active_page = QWidget()
+        active_layout = QVBoxLayout(active_page)
+        active_layout.setContentsMargins(0, 0, 0, 0)
+        active_layout.setSpacing(10)
+        path_layout = QHBoxLayout()
+        path_layout.setSpacing(8)
+        self.save_label = QLabel()
+        self.save_label.setObjectName("field_label")
+        path_layout.addWidget(self.save_label)
+        self.save_path_input = QLineEdit()
+        default_path = self.ctx.settings.get("save_path") or os.path.join(
+            os.path.expanduser("~"), "Downloads", "Blackboard_download")
+        self.save_path_input.setText(default_path)
+        self.save_path_input.setFixedHeight(32)
+        self.save_path_input.setPlaceholderText("")
+        self.save_path_input.editingFinished.connect(self._save_path_setting)
+        path_layout.addWidget(self.save_path_input, 1)
+        self.browse_btn = QPushButton()
+        self.browse_btn.setObjectName("secondary")
+        self.browse_btn.setFixedHeight(32)
+        self.browse_btn.clicked.connect(self._browse_path)
+        path_layout.addWidget(self.browse_btn)
+        active_layout.addLayout(path_layout)
+        action_layout = QHBoxLayout()
+        action_layout.setSpacing(8)
+        self.select_all_cb = QCheckBox()
+        self.select_all_cb.setTristate(True)
+        self.select_all_cb.setChecked(False)
+        self.select_all_cb.stateChanged.connect(self._on_select_all)
+        action_layout.addWidget(self.select_all_cb)
+        action_layout.addStretch()
+        self.scan_btn = QPushButton()
+        self.scan_btn.setObjectName("secondary")
+        self.scan_btn.setFixedHeight(34)
+        self.scan_btn.clicked.connect(self._start_scan)
+        action_layout.addWidget(self.scan_btn)
+        self.download_btn = QPushButton()
+        self.download_btn.setFixedHeight(34)
+        self.download_btn.clicked.connect(self._start_download_selected)
+        action_layout.addWidget(self.download_btn)
+        active_layout.addLayout(action_layout)
+        self.file_tree = QTreeWidget()
+        self.file_tree.setColumnCount(3)
+        self.file_tree.setAlternatingRowColors(True)
+        self.file_tree.setIndentation(22)
+        header = self.file_tree.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(2, 90)
+        self.file_tree.itemChanged.connect(self._on_tree_item_changed)
+        active_layout.addWidget(self.file_tree, 1)
+        self.download_progress = QProgressBar()
+        self.download_progress.setRange(0, 100)
+        self.download_progress.setValue(0)
+        self.download_progress.setFixedHeight(18)
+        self.download_progress.setFormat("%v / %m")
+        self.download_progress.setVisible(False)
+        active_layout.addWidget(self.download_progress)
+        self.content_stack.addWidget(active_page)
+        self.content_stack.setCurrentIndex(0)
+        layout.addWidget(self.content_stack, 1)
+        self.retranslate()
 
-            if has_content_type(item, "resource/x-bb-file"):
-                file_data = (
-                    detail.get("resource/x-bb-file", {})
-                    .get("file", {})
-                )
-                name = file_data.get("fileName")
-                if name:
-                    nodes.append({
-                        "type": "file",
-                        "name": name,
-                        "url": file_data.get("permanentUrl", ""),
-                        "link": get_content_url(
-                            item, BASE_URL, course_id, content_id
-                        ),
-                    })
+    def retranslate(self):
+        self.save_label.setText(self.tr("save_group"))
+        self.browse_btn.setText(self.tr("browse"))
+        self.scan_btn.setText(self.tr("scan_files"))
+        self.download_btn.setText(self.tr("download_selected"))
+        self.select_all_cb.setText(self.tr("select_all"))
+        self.empty_label.setText(self.tr("empty_state"))
+        header = self.file_tree.headerItem()
+        if header:
+            header.setText(0, self.tr("col_name"))
+            header.setText(1, self.tr("col_url"))
+            header.setText(2, self.tr("col_type"))
 
-            elif has_content_type(item, "resource/x-bb-folder"):
-                children = self.scan_tree(
-                    course_id,
-                    item["id"],
-                    depth + 1,
-                )
-                content_url = get_content_url(
-                    item, BASE_URL, course_id, content_id
-                )
-                nodes.append({
-                    "type": "lesson" if depth == 0 else "other",
-                    "name": title,
-                    "url": content_url,
-                    "link": content_url,
-                    "children": children,
-                })
+    def _save_path_setting(self):
+        self.ctx.settings.set("save_path", self.save_path_input.text().strip())
+        self.ctx.settings.save()
 
-            elif has_content_type(item, "resource/x-bb-asmt-test-link"):
-                assessment = (
-                    detail.get("resource/x-bb-asmt-test-link", {})
-                    .get("test", {})
-                    .get("assessment", {})
-                )
-                instructions = (
-                    assessment.get("instructions", {}).get("rawText", "")
-                )
-                pattern = (
-                    r'<a\s[^>]*?href="'
-                    r'(https?://[^"]+/bbcswebdav/[^"]+)"[^>]*>'
-                )
-                for match in re.finditer(pattern, instructions):
-                    file_url = match.group(1)
-                    filename = self._extract_filename(instructions, match)
-                    if filename and "." in filename:
-                        nodes.append({
-                            "type": "file",
-                            "name": filename,
-                            "url": file_url.replace(
-                                "https://lms2017.teikyo-u.ac.jp", ""
-                            ),
-                            "link": file_url,
-                        })
+    def _browse_path(self):
+        path = QFileDialog.getExistingDirectory(self, self.tr("browse_title"))
+        if path:
+            self.save_path_input.setText(path)
+            self._save_path_setting()
 
-            elif has_content_type(item, "resource/x-bb-document"):
-                content_url = get_content_url(
-                    item, BASE_URL, course_id, content_id
-                )
-                if title:
-                    nodes.append({
-                        "type": "other",
-                        "name": title,
-                        "url": "",
-                        "link": content_url,
-                    })
+    def on_course_changed(self, course_id, course_name):
+        self.course_id = course_id
+        self._start_scan()
 
-                body_html = item.get("body", {}).get("rawText", "")
-                pattern = (
-                    r'<a\s[^>]*?href="'
-                    r'(https?://[^"]+/bbcswebdav/[^"]+)"[^>]*>'
-                )
-                for match in re.finditer(pattern, body_html):
-                    file_url = match.group(1)
-                    filename = self._extract_filename(body_html, match)
-                    if filename and "." in filename:
-                        nodes.append({
-                            "type": "file",
-                            "name": filename,
-                            "url": file_url.replace(
-                                "https://lms2017.teikyo-u.ac.jp", ""
-                            ),
-                            "link": file_url,
-                        })
+    def reset(self):
+        """切换账号：丢掉上一个账号的课程和文件树，回到空状态。"""
+        self.course_id = ""
+        self._download_files = []
+        self.file_tree.blockSignals(True)
+        self.file_tree.clear()
+        self.file_tree.blockSignals(False)
+        self.download_progress.setVisible(False)
+        self.content_stack.setCurrentIndex(0)
 
-            elif title:
-                nodes.append({
-                    "type": "other",
-                    "name": title,
-                    "url": "",
-                    "link": get_content_url(
-                        item, BASE_URL, course_id, content_id
-                    ),
-                })
+    def _start_scan(self):
+        if not self.course_id:
+            self.ctx.log(self.tr("select_course_first"))
+            return
+        self._save_path_setting()
+        self.ctx.signals.set_busy.emit(self.scan_btn, True)
+        threading.Thread(target=self._scan_thread, daemon=True).start()
 
-        return nodes
+    def _scan_thread(self):
+        self.ctx.log(self.tr("scanning_files"))
+        epoch = self.ctx.account_epoch
+        try:
+            tree = self.ctx.downloader.scan_tree(self.course_id, "ROOT")
+            if epoch != self.ctx.account_epoch:
+                return
+            self.ctx.signals.populate_tree.emit(self.file_tree, tree)
+            total = self.ctx.downloader.count_files(tree)
+            self.ctx.log(self.tr("scan_done", total))
+        except Exception as e:
+            self.ctx.log(str(e))
+        finally:
+            self.ctx.signals.set_busy.emit(self.scan_btn, False)
 
-    @staticmethod
-    def _extract_filename(html, match):
-        import json
+    def _populate_file_tree(self, tree_widget, nodes):
+        tree_widget.blockSignals(True)
+        tree_widget.clear()
+        self._add_tree_items(tree_widget, nodes)
+        tree_widget.blockSignals(False)
+        self.select_all_cb.blockSignals(True)
+        self.select_all_cb.setCheckState(Qt.CheckState.Unchecked)
+        self.select_all_cb.blockSignals(False)
+        if nodes:
+            self.content_stack.setCurrentIndex(1)
 
-        tag = match.group(0)
-        file_match = re.search(r'data-bbfile="([^"]*)"', tag)
-        if file_match:
-            try:
-                file_data = json.loads(
-                    file_match.group(1).replace("&quot;", '"')
-                )
-                filename = (
-                    file_data.get("fileName")
-                    or file_data.get("displayName")
-                )
-                if filename:
-                    return filename
-            except Exception:
-                pass
-
-        text_match = re.search(
-            r'>([^<]+)</a>',
-            html[match.end():match.end() + 200],
-        )
-        if text_match:
-            return text_match.group(1).strip()
-
-        return None
-
-    def count_files(self, nodes):
-        count = 0
+    def _add_tree_items(self, parent, nodes):
         for node in nodes:
-            if node["type"] == "file":
-                count += 1
-            elif node.get("children") is not None:
-                count += self.count_files(node.get("children", []))
-        return count
+            item = QTreeWidgetItem()
+            item.setCheckState(0, Qt.CheckState.Unchecked)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsAutoTristate)
+            item.setText(0, node.get("name", ""))
+            item.setData(0, Qt.ItemDataRole.UserRole, node.get("url", ""))
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, node.get("type", "other"))
+            type_key = {
+                "lesson": "type_lesson",
+                "file": "type_file",
+                "other": "type_other",
+            }.get(node.get("type"), "type_other")
+            item.setText(2, self.tr(type_key))
+            if parent is self.file_tree:
+                parent.addTopLevelItem(item)
+            else:
+                parent.addChild(item)
+            self._set_url_cell(item, node.get("link", ""))
+            self._add_tree_items(item, node.get("children", []))
 
-    def download_files(self, files, save_path, course_name, progress_cb=None):
-        """下载文件到 save_path/<course_name>/ 下。
+    def _set_url_cell(self, item, url):
+        if not url:
+            return
+        safe_url = html.escape(url, quote=True)
+        link_label = QLabel(
+            f'<a href="{safe_url}">{html.escape(self.tr("open"))}</a>'
+        )
+        link_label.setTextFormat(Qt.TextFormat.RichText)
+        link_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+        )
+        link_label.setOpenExternalLinks(True)
+        link_label.setToolTip(url)
+        self.file_tree.setItemWidget(item, 1, link_label)
 
-        files: [(name, url), ...]
-        progress_cb(i, size, safe_name) 每下载完一个文件回调一次。
-        返回 (成功数, 总数)。
-        """
-        safe_course = sanitize_name(course_name)
-        course_path = os.path.join(save_path, safe_course)
-        os.makedirs(course_path, exist_ok=True)
+    def _on_tree_item_changed(self, item, column):
+        if column != 0:
+            return
+        self.file_tree.blockSignals(True)
+        self._update_parent_state(item)
+        self.file_tree.blockSignals(False)
+        self._update_select_all_state()
 
-        ok = 0
+    def _update_parent_state(self, item):
+        parent = item.parent()
+        if parent is None:
+            return
+        checked = 0
+        total = parent.childCount()
+        for i in range(total):
+            if parent.child(i).checkState(0) == Qt.CheckState.Checked:
+                checked += 1
+        if checked == 0:
+            parent.setCheckState(0, Qt.CheckState.Unchecked)
+        elif checked == total:
+            parent.setCheckState(0, Qt.CheckState.Checked)
+        else:
+            parent.setCheckState(0, Qt.PartiallyChecked)
+        self._update_parent_state(parent)
+
+    def _update_select_all_state(self):
+        top_count = self.file_tree.topLevelItemCount()
+        if top_count == 0:
+            return
+        checked = 0
+        for i in range(top_count):
+            if self.file_tree.topLevelItem(i).checkState(0) == Qt.CheckState.Checked:
+                checked += 1
+        self.select_all_cb.blockSignals(True)
+        if checked == 0:
+            self.select_all_cb.setCheckState(Qt.CheckState.Unchecked)
+        elif checked == top_count:
+            self.select_all_cb.setCheckState(Qt.CheckState.Checked)
+        else:
+            self.select_all_cb.setCheckState(Qt.PartiallyChecked)
+        self.select_all_cb.blockSignals(False)
+
+    def _on_select_all(self, state):
+        if state == 1:
+            self.select_all_cb.blockSignals(True)
+            self.select_all_cb.setCheckState(Qt.CheckState.Checked)
+            self.select_all_cb.blockSignals(False)
+            state = 2
+        self.file_tree.blockSignals(True)
+        check_state = Qt.CheckState.Checked if state == 2 else Qt.CheckState.Unchecked
+        for i in range(self.file_tree.topLevelItemCount()):
+            self.file_tree.topLevelItem(i).setCheckState(0, check_state)
+        self.file_tree.blockSignals(False)
+
+    def _get_checked_urls(self):
+        results = []
+        for i in range(self.file_tree.topLevelItemCount()):
+            self._collect_checked(self.file_tree.topLevelItem(i), results)
+        return results
+
+    def _collect_checked(self, item, results):
+        if item.childCount() == 0:
+            if (
+                item.checkState(0) == Qt.CheckState.Checked
+                and item.data(0, Qt.ItemDataRole.UserRole + 1) == "file"
+            ):
+                url = item.data(0, Qt.ItemDataRole.UserRole)
+                name = item.text(0)
+                if url:
+                    results.append((name, url))
+        else:
+            for i in range(item.childCount()):
+                self._collect_checked(item.child(i), results)
+
+    def _start_download_selected(self):
+        files = self._get_checked_urls()
+        if not files:
+            self.ctx.log(self.tr("no_selection"))
+            return
+        save_path = self.save_path_input.text().strip()
+        if not save_path:
+            self.ctx.log(self.tr("no_path"))
+            return
+        self._save_path_setting()
+        self._download_files = files
+        self.download_progress.setRange(0, len(files))
+        self.download_progress.setValue(0)
+        self.ctx.signals.set_progress.emit(self.download_progress, 0, self.tr("progress_format").format(0, len(files), ""))
+        self.download_progress.setVisible(True)
+        self.ctx.signals.set_busy.emit(self.download_btn, True)
+        course_name = self.ctx.current_course_name or ""
+        threading.Thread(
+            target=self._download_thread,
+            args=(files, save_path, course_name),
+            daemon=True,
+        ).start()
+
+    def _download_thread(self, files, save_path, course_name):
         total = len(files)
-        for i, (name, url) in enumerate(files):
-            safe_name = sanitize_name(name)
-            path = os.path.join(course_path, safe_name)
-            size = self.api.download_file(url, path)
-            if size:
-                ok += 1
-            if progress_cb:
-                progress_cb(i + 1, size, safe_name)
+        self.ctx.log(self.tr("download_start", total))
 
-        return ok, total
+        def progress_cb(i, size, safe_name):
+            fmt = self.tr("progress_format").format(i, total, safe_name)
+            self.ctx.signals.set_progress.emit(self.download_progress, i, fmt)
+            self.ctx.log(self.tr("download_progress", i, total, size, safe_name))
+
+        try:
+            ok, _ = self.ctx.downloader.download_files(
+                files, save_path, course_name, progress_cb=progress_cb)
+            self.ctx.log(self.tr("download_done"))
+            self.ctx.signals.toast.emit(
+                self.tr("download_done") + f" ({ok}/{total})",
+                "success" if ok == total else "error",
+            )
+        except Exception as e:
+            self.ctx.log(str(e))
+            self.ctx.signals.toast.emit(str(e)[:80], "error")
+        finally:
+            self.ctx.signals.set_progress.emit(self.download_progress, -1, "")
+            self.ctx.signals.set_busy.emit(self.download_btn, False)
