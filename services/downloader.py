@@ -1,7 +1,12 @@
 """文件扫描与下载服务。纯逻辑，不依赖 Qt。"""
 import os
 import re
-from services.content_types import get_content_url, has_content_type
+from services.content_types import (
+    get_content_url,
+    has_content_type,
+    is_content_folder,
+    is_content_page,
+)
 
 
 BASE_URL = "https://lms2017.teikyo-u.ac.jp"
@@ -39,7 +44,21 @@ class DownloadService:
                         "link": get_content_url(item, BASE_URL, course_id, content_id),
                     })
 
-            elif has_content_type(item, "resource/x-bb-folder"):
+            elif (
+                has_content_type(item, "resource/x-bb-folder")
+                and is_content_page(item)
+            ):
+                # Ultra 正文页也使用 folder 外壳；只显示页面本身及可下载附件。
+                nodes.append({
+                    "type": "other",
+                    "name": title,
+                    "url": "",
+                    "link": get_content_url(item, BASE_URL, course_id, content_id),
+                })
+                children = self.scan_tree(course_id, item["id"], depth + 1)
+                nodes.extend(self._iter_files(children))
+
+            elif is_content_folder(item):
                 children = self.scan_tree(course_id, item["id"], depth + 1)
                 nodes.append({
                     "type": "lesson",
@@ -72,7 +91,11 @@ class DownloadService:
                         "url": "",
                         "link": content_url,
                     })
-                body_html = item.get("body", {}).get("rawText", "")
+                body = item.get("body") or {}
+                if isinstance(body, dict):
+                    body_html = body.get("rawText") or ""
+                else:
+                    body_html = body if isinstance(body, str) else ""
                 for m in re.finditer(r'<a\s[^>]*?href="(https?://[^"]+/bbcswebdav/[^"]+)"[^>]*>', body_html):
                     file_url = m.group(1)
                     fname = self._extract_filename(body_html, m)
@@ -90,6 +113,13 @@ class DownloadService:
                     "link": get_content_url(item, BASE_URL, course_id, content_id),
                 })
         return nodes
+
+    def _iter_files(self, nodes):
+        for node in nodes:
+            if node.get("type") == "file":
+                yield node
+            else:
+                yield from self._iter_files(node.get("children", []))
 
     @staticmethod
     def _extract_filename(html, match):
