@@ -74,11 +74,13 @@ class Header(QWidget):
         root.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
         self._root_layout = root
         self._compact = True
+        self._updating_layout = False
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
 
         self.stack = QStackedWidget()
         self.stack.setFixedHeight(32)
-        # 账号区域使用选择栏之外的剩余宽度，长姓名仍可显示省略号。
+        self.stack.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        # 隐藏的登录页不参与当前账号区的宽度分配。
         root.addWidget(self.stack, 1)
 
         # ---- 页 0：登录 ----
@@ -215,40 +217,53 @@ class Header(QWidget):
         term_pair_width = self.prefix_label.sizeHint().width() + 6 + term_width
         course_label_width = self.course_label.sizeHint().width() + 6
         self._term_pair.setFixedWidth(term_pair_width)
-        course_max = course_width
-        self.course_cb.setMinimumWidth(course_width)
-        self.course_cb.setMaximumWidth(course_max)
-        self._course_pair.setMinimumWidth(course_label_width + course_width)
-        self._course_pair.setMaximumWidth(course_label_width + course_max)
-        self._course_controls.setMinimumWidth(
+        self.course_cb.setFixedWidth(course_width)
+        self._course_pair.setFixedWidth(course_label_width + course_width)
+        self._course_controls.setFixedWidth(
             term_pair_width + 16 + course_label_width + course_width
         )
-        self._course_controls.setMaximumWidth(
-            term_pair_width + 16 + course_label_width + course_max
-        )
         self._course_controls.setSizePolicy(
-            QSizePolicy.Policy.Maximum if self._compact else QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
             QSizePolicy.Policy.Fixed,
         )
-        self._root_layout.setStretch(0, 1 if self._compact else 3)
-        self._root_layout.setStretch(1, 0 if self._compact else 3)
+        self._root_layout.setStretch(0, 1)
+        self._root_layout.setStretch(1, 0)
         self._root_layout.setAlignment(
             self._course_controls,
-            Qt.AlignmentFlag.AlignRight if self._compact else Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
         )
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        if self._updating_layout:
+            return
+        self._updating_layout = True
+        try:
+            # 用当前账号区的完整文字宽度判断；选择框保持既定宽度。
+            account_layout = self.stack.currentWidget().layout()
+            account_layout.invalidate()
+            account_width = account_layout.sizeHint().width()
+            gap = self.prefix_label.fontMetrics().horizontalAdvance("　　")
+            margins = self._root_layout.contentsMargins()
+            available_width = self.width() - margins.left() - margins.right()
+            required_width = account_width + gap + self._course_controls.minimumWidth()
+            compact = available_width < required_width
+            changed = compact != self._compact
+            if changed:
+                self._compact = compact
+                self._root_layout.setDirection(
+                    QBoxLayout.Direction.TopToBottom
+                    if compact else QBoxLayout.Direction.LeftToRight
+                )
+            self._root_layout.setSpacing(8 if compact else gap)
+            if changed:
+                self.updateGeometry()
+        finally:
+            self._updating_layout = False
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        compact = self.width() < 400
-        if compact != self._compact:
-            self._compact = compact
-            self._root_layout.setDirection(
-                QBoxLayout.Direction.TopToBottom
-                if compact else QBoxLayout.Direction.LeftToRight
-            )
-            self._root_layout.setSpacing(8 if compact else 16)
-            self._update_selector_widths()
-            self.updateGeometry()
+        self._update_responsive_layout()
 
     def retranslate(self):
         # 文案键带着结尾的冒号（"用户名:"），做占位文字时去掉
@@ -285,6 +300,7 @@ class Header(QWidget):
         if not ok:
             self.account_label.set_full_text("")
         self.stack.setCurrentIndex(1 if ok else 0)
+        self._update_responsive_layout()
 
     def reset(self):
         """切换账号：回到未登录的初始状态，清空账号显示、输入框和课程列表。"""
@@ -303,10 +319,12 @@ class Header(QWidget):
         """登录后显示是谁：姓名和学籍番号，哪个有就显示哪个。"""
         parts = [p.strip() for p in (name, login_id) if p and p.strip()]
         self.account_label.set_full_text(" · ".join(parts))
+        self._update_responsive_layout()
 
     def set_login_busy(self, busy):
         self.login_btn.setEnabled(not busy)
         self.login_btn.setText(self.tr("login_busy") if busy else self.tr("login_btn"))
+        self._update_responsive_layout()
 
     def set_courses(self, courses):
         # 课程通常从后台线程加载，通过信号在 GUI 线程更新两个下拉框。
