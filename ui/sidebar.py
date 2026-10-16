@@ -1,4 +1,4 @@
-"""左侧导航栏：模块切换（测验 / 文件下载 / 设置）。"""
+"""左侧导航栏：模块切换（文件下载 / 设置）。"""
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QButtonGroup, QLabel
 
@@ -55,6 +55,6 @@ class Sidebar(QWidget):
             btn.setIcon(nav_icon(icon))
 
     def retranslate(self):
-        self.title_label.setText(self.tr("window_title"))
+        self.title_label.setText(self.tr("sidebar_title"))
         for btn, _icon, key in self._nav_buttons:
             btn.setText(" " + self.tr(key))
