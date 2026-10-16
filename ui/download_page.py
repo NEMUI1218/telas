@@ -52,6 +52,7 @@ class DownloadPage(QWidget):
 
         # 保存路径：一行，标签在左
         path_layout = QHBoxLayout()
+        path_layout.setContentsMargins(0, 0, 9, 0)
         path_layout.setSpacing(8)
         self.save_label = QLabel()
         self.save_label.setObjectName("field_label")
@@ -76,6 +77,7 @@ class DownloadPage(QWidget):
 
         # 工具行：左边全选，右边扫描（次要）和下载（主要）
         action_layout = QHBoxLayout()
+        action_layout.setContentsMargins(0, 0, 9, 0)
         action_layout.setSpacing(8)
 
         self.select_all_cb = QCheckBox()
@@ -110,7 +112,7 @@ class DownloadPage(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(1, 90)
         self.file_tree.itemChanged.connect(self._on_tree_item_changed)
-        # 仅给文件列表加与测验页相同的左右边距，保持上方工具栏宽度不变。
+        # 文件列表与测验页使用相同边距，上方按钮右侧也留出相同空间。
         tree_container = QWidget()
         tree_layout = QHBoxLayout(tree_container)
         tree_layout.setContentsMargins(9, 0, 9, 0)
