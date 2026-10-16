@@ -1,3 +1,319 @@
+"""文件下载页：扫描、勾选文件树和下载进度。保存选项由设置页管理。"""
+import html
+import os
+import re
+import threading
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QCheckBox, QTreeWidget, QTreeWidgetItem,
+    QProgressBar, QStackedWidget, QHeaderView,
+)
+
+from utils.theme import colors
+
+
+class DownloadPage(QWidget):
+    _CHECK_STATE_ROLE = Qt.ItemDataRole.UserRole + 3
+
+    def __init__(self, ctx, parent=None):
+        super().__init__(parent)
+        self.ctx = ctx
+        self.course_id = ""
+        self._download_files = []
+        self._build_ui()
+        self.ctx.signals.course_changed.connect(self.on_course_changed)
+        self.ctx.signals.populate_tree.connect(self._populate_file_tree)
+        self.ctx.signals.theme_changed.connect(self._refresh_name_links)
+
+    def tr(self, key, *args):
+        return self.ctx.tr(key, *args)
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ---- 内容栈：空态 / 实际操作区 ----
+        self.content_stack = QStackedWidget()
+
+        # 页 0：空态提示
+        empty_page = QWidget()
+        empty_layout = QVBoxLayout(empty_page)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label = QLabel()
+        self.empty_label.setObjectName("empty_state")
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(self.empty_label)
+        self.content_stack.addWidget(empty_page)
+
+        # 页 1：实际操作
+        active_page = QWidget()
+        active_layout = QVBoxLayout(active_page)
+        active_layout.setContentsMargins(0, 0, 0, 0)
+        active_layout.setSpacing(10)
+
+        # 工具行：左边全选，右边扫描（次要）和下载（主要）
+        action_layout = QHBoxLayout()
+        action_layout.setContentsMargins(9, 0, 9, 0)
+        action_layout.setSpacing(8)
+
+        self.select_all_cb = QCheckBox()
+        self.select_all_cb.setTristate(True)
+        self.select_all_cb.setChecked(False)
+        self.select_all_cb.stateChanged.connect(self._on_select_all)
+        action_layout.addWidget(self.select_all_cb)
+        action_layout.addStretch()
+
+        scan_btn = QPushButton()
+        self.scan_btn = scan_btn
+        scan_btn.setObjectName("secondary")
+        scan_btn.setFixedSize(110, 34)
+        scan_btn.clicked.connect(self._start_scan)
+        action_layout.addWidget(scan_btn)
+
+        download_btn = QPushButton()
+        self.download_btn = download_btn
+        download_btn.setFixedSize(110, 34)
+        download_btn.clicked.connect(self._start_download_selected)
+        action_layout.addWidget(download_btn)
+        active_layout.addLayout(action_layout)
+
+        # 文件树
+        self.file_tree = QTreeWidget()
+        self.file_tree.setColumnCount(2)
+        self.file_tree.setAlternatingRowColors(True)
+        self.file_tree.setIndentation(22)
+        header = self.file_tree.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(1, 90)
+        self.file_tree.itemChanged.connect(self._on_tree_item_changed)
+        # 文件列表与测验页使用相同边距，上方按钮右侧也留出相同空间。
+        tree_container = QWidget()
+        tree_layout = QHBoxLayout(tree_container)
+        tree_layout.setContentsMargins(9, 0, 9, 0)
+        tree_layout.setSpacing(0)
+        tree_layout.addWidget(self.file_tree)
+        active_layout.addWidget(tree_container, 1)
+
+        # 进度条：只在下载时出现，贴着文件树下方
+        self.download_progress = QProgressBar()
+        self.download_progress.setRange(0, 100)
+        self.download_progress.setValue(0)
+        self.download_progress.setFixedHeight(18)
+        self.download_progress.setFormat("%v / %m")
+        self.download_progress.setVisible(False)
+        active_layout.addWidget(self.download_progress)
+
+        self.content_stack.addWidget(active_page)
+        self.content_stack.setCurrentIndex(0)
+        layout.addWidget(self.content_stack, 1)
+
+        self.retranslate()
+
+    def retranslate(self):
+        self.scan_btn.setText(self.tr("refresh"))
+        self.download_btn.setText(self.tr("download"))
+        self.select_all_cb.setText(self.tr("select_all"))
+        self.empty_label.setText(self.tr("empty_state"))
+        header = self.file_tree.headerItem()
+        if header:
+            header.setText(0, self.tr("col_name"))
+            header.setText(1, self.tr("col_type"))
+            header.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
+
+    # ------------------------------------------------------------- 课程切换
+    def on_course_changed(self, course_id, course_name):
+        self.course_id = course_id
+        self._start_scan()
+
+    def reset(self):
+        """切换账号：丢掉上一个账号的课程和文件树，回到空状态。"""
+        self.course_id = ""
+        self._download_files = []
+        self.file_tree.blockSignals(True)
+        self.file_tree.clear()
+        self.file_tree.blockSignals(False)
+        self.download_progress.setVisible(False)
+        self.content_stack.setCurrentIndex(0)
+
+    def _start_scan(self):
+        if not self.course_id:
+            self.ctx.log(self.tr("select_course_first"))
+            return
+        self.ctx.signals.set_busy.emit(self.scan_btn, True)
+        threading.Thread(target=self._scan_thread, daemon=True).start()
+
+    def _scan_thread(self):
+        self.ctx.log(self.tr("scanning_files"))
+        epoch = self.ctx.account_epoch
+        try:
+            tree = self.ctx.downloader.scan_tree(self.course_id, "ROOT")
+            if epoch != self.ctx.account_epoch:
+                return  # 扫描期间切换了账号，结果作废
+            self.ctx.signals.populate_tree.emit(self.file_tree, tree)
+            total = self.ctx.downloader.count_files(tree)
+            self.ctx.log(self.tr("scan_done", total))
+        except Exception as e:
+            self.ctx.log(str(e))
+        finally:
+            self.ctx.signals.set_busy.emit(self.scan_btn, False)
+
+    # ------------------------------------------------------------- 文件树
+    def _populate_file_tree(self, tree_widget, nodes):
+        tree_widget.blockSignals(True)
+        tree_widget.clear()
+        self._add_tree_items(tree_widget, nodes)
+        tree_widget.blockSignals(False)
+        self.select_all_cb.blockSignals(True)
+        self.select_all_cb.setCheckState(Qt.CheckState.Unchecked)
+        self.select_all_cb.blockSignals(False)
+        # 有内容时切到操作页
+        if nodes:
+            self.content_stack.setCurrentIndex(1)
+
+    def _add_tree_items(self, parent, nodes):
+        for node in nodes:
+            name = node.get("name", "")
+            item = QTreeWidgetItem()
+            self._set_item_check_state(item, Qt.CheckState.Unchecked)
+            # 勾选框由名称单元格中的 QCheckBox 绘制；状态只存在自定义
+            # 数据角色中，树项目不设置原生 CheckStateRole。
+            item.setFlags(
+                item.flags()
+                & ~Qt.ItemFlag.ItemIsUserCheckable
+                & ~Qt.ItemFlag.ItemIsAutoTristate
+            )
+            item.setText(0, "")
+            item.setData(0, Qt.ItemDataRole.UserRole, node.get("url", ""))
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, node.get("type", "other"))
+            item.setData(0, Qt.ItemDataRole.UserRole + 2, name)
+            type_key = {
+                "lesson": "type_lesson",
+                "file": "type_file",
+                "other": "type_other",
+            }.get(node.get("type"), "type_other")
+            item.setText(1, self.tr(type_key))
+            item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
+            if parent is self.file_tree:
+                parent.addTopLevelItem(item)
+            else:
+                parent.addChild(item)
+            self._set_name_and_url(item, name, node.get("link", ""))
+            self._add_tree_items(item, node.get("children", []))
+            # 资料页的附件默认可见；课时目录保留原来的展开行为。
+            if node.get("type") == "other" and item.childCount():
+                item.setExpanded(True)
+
+    def _set_name_and_url(self, item, name, url):
+        cell = QWidget()
+        cell_layout = QHBoxLayout(cell)
+        cell_layout.setContentsMargins(0, 0, 0, 0)
+        cell_layout.setSpacing(8)
+
+        checkbox = QCheckBox()
+        # 半选状态由树同步设置；点击时仍按普通两态复选框切换。
+        checkbox.setTristate(False)
+        checkbox.setCheckState(self._item_check_state(item))
+        checkbox.stateChanged.connect(
+            lambda state, current=item: self._on_item_checkbox_changed(
+                current, state
+            )
+        )
+        cell_layout.addWidget(checkbox)
+
+        name_label = QLabel(name)
+        if url:
+            name_label.setProperty("name_link_url", url)
+            name_label.setProperty("name_link_title", name)
+            self._render_name_link(name_label)
+            name_label.setTextFormat(Qt.TextFormat.RichText)
+            name_label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextBrowserInteraction
+            )
+            name_label.setOpenExternalLinks(True)
+            name_label.setToolTip(url)
+        else:
+            name_label.setTextFormat(Qt.TextFormat.PlainText)
+        cell_layout.addWidget(name_label)
+
+        cell_layout.addStretch(1)
+
+        self.file_tree.setItemWidget(item, 0, cell)
+
+    @staticmethod
+    def _render_name_link(label):
+        font = label.font()
+        font.setBold(True)
+        label.setFont(font)
+        url = html.escape(label.property("name_link_url"), quote=True)
+        title = html.escape(label.property("name_link_title"))
+        label.setText(
+            f'<a href="{url}" style="color:{colors()["text"]}; '
+            f'text-decoration:none; font-weight:700;"><b>{title}</b></a>'
+        )
+
+    def _refresh_name_links(self):
+        for label in self.file_tree.findChildren(QLabel):
+            if label.property("name_link_url"):
+                self._render_name_link(label)
+
+    def _on_item_checkbox_changed(self, item, state):
+        check_state = Qt.CheckState(state)
+        self.file_tree.blockSignals(True)
+        self._set_item_check_state(item, check_state)
+
+        if check_state != Qt.CheckState.PartiallyChecked:
+            def set_descendants(parent):
+                for index in range(parent.childCount()):
+                    child = parent.child(index)
+                    self._set_item_check_state(child, check_state)
+                    set_descendants(child)
+
+            set_descendants(item)
+
+        self._update_parent_state(item)
+        self.file_tree.blockSignals(False)
+        self._sync_tree_checkboxes()
+        self._update_select_all_state()
+
+    def _sync_tree_checkboxes(self):
+        def sync(item):
+            cell = self.file_tree.itemWidget(item, 0)
+            checkbox = cell.findChild(QCheckBox) if cell else None
+            if checkbox:
+                checkbox.blockSignals(True)
+                checkbox.setCheckState(self._item_check_state(item))
+                checkbox.blockSignals(False)
+            for index in range(item.childCount()):
+                sync(item.child(index))
+
+        for index in range(self.file_tree.topLevelItemCount()):
+            sync(self.file_tree.topLevelItem(index))
+
+    def _on_tree_item_changed(self, item, column):
+        if column != 0:
+            return
+        self.file_tree.blockSignals(True)
+        self._update_parent_state(item)
+        self.file_tree.blockSignals(False)
+        self._sync_tree_checkboxes()
+        self._update_select_all_state()
+
+    def _update_parent_state(self, item):
+        parent = item.parent()
+        if parent is None:
+            return
+        checked = 0
+        partial = 0
+        total = parent.childCount()
+        for i in range(total):
+            state = self._item_check_state(parent.child(i))
+            if state == Qt.CheckState.Checked:
+                checked += 1
             elif state == Qt.CheckState.PartiallyChecked:
                 partial += 1
         if checked == total:
@@ -126,3 +442,5 @@
             self.ctx.log(str(e))
             self.ctx.signals.toast.emit(str(e)[:80], "error")
         finally:
+            self.ctx.signals.set_progress.emit(self.download_progress, -1, "")
+            self.ctx.signals.set_busy.emit(self.download_btn, False)
