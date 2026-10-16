@@ -69,7 +69,6 @@ class Header(QWidget):
 
     def _build_ui(self):
         root = QBoxLayout(QBoxLayout.Direction.TopToBottom, self)
-        root.setContentsMargins(0, 0, 0, 0)
         root.setContentsMargins(0, 0, 9, 0)
         root.setSpacing(8)
         root.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
@@ -158,7 +157,6 @@ class Header(QWidget):
         self.course_cb.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
-        self.course_cb.setMinimumContentsLength(12)
         self.course_cb.setMinimumContentsLength(10)
         self.course_cb.currentIndexChanged.connect(self._on_course_index_changed)
 
@@ -208,10 +206,8 @@ class Header(QWidget):
         return combo.fontMetrics().horizontalAdvance(sample) + decoration_width
 
     def _update_selector_widths(self):
-        # 学期以「2026後期」六个字符为基准，课程以十二个中日文字格为基准。
         # 学期以「2026後期」六个字符为基准，课程缩为十个中日文字格。
         term_width = self._combo_text_width(self.prefix_cb, "2026後期")
-        course_width = self._combo_text_width(self.course_cb, "漢" * 12)
         course_width = self._combo_text_width(self.course_cb, "漢" * 10)
         self.prefix_cb.setFixedWidth(term_width)
         self.prefix_label.ensurePolished()
@@ -219,7 +215,6 @@ class Header(QWidget):
         term_pair_width = self.prefix_label.sizeHint().width() + 6 + term_width
         course_label_width = self.course_label.sizeHint().width() + 6
         self._term_pair.setFixedWidth(term_pair_width)
-        course_max = course_width if self._compact else max(course_width, 400)
         course_max = course_width
         self.course_cb.setMinimumWidth(course_width)
         self.course_cb.setMaximumWidth(course_max)
@@ -244,7 +239,6 @@ class Header(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        compact = self.width() < 850
         compact = self.width() < 400
         if compact != self._compact:
             self._compact = compact
