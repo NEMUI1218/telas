@@ -351,7 +351,7 @@ QCheckBox::indicator, QTreeWidget::indicator {
     width: 16px;
     height: 16px;
     border: 1px solid $border_strong;
-    border-radius: 4px;
+    border-radius: 9px;
     background-color: $input;
 }
 QCheckBox::indicator:hover, QTreeWidget::indicator:hover {
