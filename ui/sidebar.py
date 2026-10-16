@@ -1,4 +1,6 @@
 """左侧导航栏：模块切换（文件下载 / 设置）。"""
+import html
+
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QButtonGroup, QLabel
 
@@ -55,6 +57,18 @@ class Sidebar(QWidget):
             btn.setIcon(nav_icon(icon))
 
     def retranslate(self):
-        self.title_label.setText(self.tr("sidebar_title"))
+        title = self.tr("sidebar_title")
+        assistant = "アシスタント"
+        if self.ctx.i18n.lang == "ja" and title.endswith(assistant):
+            prefix = html.escape(title.removesuffix(assistant))
+            self.title_label.setTextFormat(Qt.TextFormat.RichText)
+            self.title_label.setWordWrap(False)
+            self.title_label.setText(
+                f'{prefix}<span style="font-size:12px;">{assistant}</span>'
+            )
+        else:
+            self.title_label.setTextFormat(Qt.TextFormat.PlainText)
+            self.title_label.setWordWrap(True)
+            self.title_label.setText(title)
         for btn, _icon, key in self._nav_buttons:
-            btn.setText(" " + self.tr(key))
+            btn.setText(" " + self.tr(key).replace("&", "&&"))
