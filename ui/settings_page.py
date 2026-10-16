@@ -1,6 +1,11 @@
-"""设置页：语言 + 主题。"""
+"""设置页：语言、主题和下载保存设置。"""
+import os
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QComboBox
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QGroupBox, QLabel, QComboBox, QCheckBox, QLineEdit, QPushButton, QFileDialog,
+)
 
 from utils.theme import apply_theme
 
@@ -20,6 +25,14 @@ class SettingsPage(QWidget):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addStretch(1)
+
+        self.settings_container = QWidget()
+        self.settings_container.setMaximumWidth(520)
+        self.settings_container.setMinimumWidth(0)
+        settings_layout = QVBoxLayout(self.settings_container)
+        settings_layout.setContentsMargins(0, 0, 0, 0)
+        settings_layout.setSpacing(12)
 
         self.appearance_group = QGroupBox()
         self.appearance_group.setMaximumWidth(520)
@@ -56,13 +69,65 @@ class SettingsPage(QWidget):
         theme_row.addWidget(self.theme_cb)
         form_layout.addLayout(theme_row)
 
-        layout.addWidget(self.appearance_group, 0, Qt.AlignmentFlag.AlignHCenter)
-        layout.addStretch()
+        settings_layout.addWidget(self.appearance_group)
+
+        self.download_group = QGroupBox()
+        self.download_group.setMaximumWidth(520)
+        download_layout = QGridLayout(self.download_group)
+        download_layout.setContentsMargins(4, 0, 4, 2)
+        download_layout.setHorizontalSpacing(10)
+        download_layout.setVerticalSpacing(10)
+        download_layout.setColumnStretch(1, 1)
+
+        self.save_path_label = QLabel()
+        self.save_path_label.setObjectName("field_label")
+        download_layout.addWidget(self.save_path_label, 0, 0)
+
+        self.save_path_input = QLineEdit()
+        save_path = self.ctx.settings.get("save_path")
+        if not save_path or not str(save_path).strip():
+            save_path = os.path.join(
+                os.path.expanduser("~"), "Downloads", "Blackboard_download"
+            )
+            self.ctx.settings.set("save_path", save_path)
+            self.ctx.settings.save()
+        self.save_path_input.setText(save_path)
+        self.save_path_input.setFixedHeight(32)
+        self.save_path_input.setMinimumWidth(0)
+        self.save_path_input.setMaximumWidth(260)
+        self.save_path_input.editingFinished.connect(self._save_path_setting)
+        download_layout.addWidget(
+            self.save_path_input, 0, 1, Qt.AlignmentFlag.AlignLeft
+        )
+
+        self.browse_btn = QPushButton()
+        self.browse_btn.setObjectName("secondary")
+        self.browse_btn.setFixedHeight(32)
+        self.browse_btn.setFixedWidth(72)
+        self.browse_btn.clicked.connect(self._browse_path)
+        download_layout.addWidget(self.browse_btn, 0, 2)
+        self.time_prefix_cb = QCheckBox()
+        self.time_prefix_cb.setChecked(
+            bool(self.ctx.settings.get("save_term_prefix", False))
+        )
+        self.time_prefix_cb.toggled.connect(self._on_time_prefix_changed)
+        download_layout.addWidget(
+            self.time_prefix_cb, 1, 1, 1, 2, Qt.AlignmentFlag.AlignLeft
+        )
+
+        settings_layout.addWidget(self.download_group)
+        layout.addWidget(self.settings_container, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch(1)
 
     def retranslate(self):
         self.appearance_group.setTitle(self.tr("appearance"))
         self.lang_label.setText(self.tr("lang_label"))
         self.theme_label.setText(self.tr("theme_label"))
+        self.download_group.setTitle(self.tr("download_settings"))
+        separator = ":" if self.ctx.i18n.lang == "en" else "："
+        self.save_path_label.setText(self.tr("save_group").rstrip(":：") + separator)
+        self.browse_btn.setText(self.tr("browse"))
+        self.time_prefix_cb.setText(self.tr("time_prefix"))
         self.theme_cb.blockSignals(True)
         self.theme_cb.clear()
         self.theme_cb.addItem(self.tr("theme_dark"), "dark")
@@ -72,6 +137,24 @@ class SettingsPage(QWidget):
         index = self.theme_cb.findData(theme)
         self.theme_cb.setCurrentIndex(index if index >= 0 else 0)
         self.theme_cb.blockSignals(False)
+
+    def _save_path_setting(self):
+        self.ctx.settings.set("save_path", self.save_path_input.text().strip())
+        self.ctx.settings.save()
+
+    def _browse_path(self):
+        path = QFileDialog.getExistingDirectory(
+            self,
+            self.tr("browse_title"),
+            self.save_path_input.text().strip(),
+        )
+        if path:
+            self.save_path_input.setText(path)
+            self._save_path_setting()
+
+    def _on_time_prefix_changed(self, checked):
+        self.ctx.settings.set("save_term_prefix", bool(checked))
+        self.ctx.settings.save()
 
     def _on_lang_changed(self, idx):
         lang = LANG_MAP[idx] if 0 <= idx < len(LANG_MAP) else "zh"
