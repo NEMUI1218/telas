@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 # 打包：python -m PyInstaller BlackboardTool.spec --noconfirm --clean
 #
-#   Windows → dist/BlackboardTool.exe（单文件）
-#   macOS   → dist/BlackboardTool.app
-#   Linux   → dist/BlackboardTool（单文件）
+#   Windows → dist/TELAS.exe（单文件）
+#   macOS   → dist/TELAS.app
+#   Linux   → dist/TELAS（单文件）
 #
 # 只能在哪个系统上打哪个系统的包。Mac 版可以交给 GitHub Actions（.github/workflows/build.yml）。
 import sys
@@ -28,7 +28,7 @@ if sys.platform == 'darwin':
         a.scripts,
         [],
         exclude_binaries=True,
-        name='BlackboardTool',
+        name='TELAS',
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
@@ -39,13 +39,15 @@ if sys.platform == 'darwin':
         codesign_identity=None,
         entitlements_file=None,
     )
-    coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='BlackboardTool')
+    coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='TELAS')
     app = BUNDLE(
         coll,
-        name='BlackboardTool.app',
+        name='TELAS.app',
         icon=None,
         bundle_identifier='io.github.blackboardtool',
         info_plist={
+            'CFBundleName': 'TELAS',
+            'CFBundleDisplayName': 'TELAS',
             'NSHighResolutionCapable': True,
             'CFBundleShortVersionString': '1.0.0',
         },
@@ -57,7 +59,7 @@ else:
         a.binaries,
         a.datas,
         [],
-        name='BlackboardTool',
+        name='TELAS',
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
