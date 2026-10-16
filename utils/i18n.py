@@ -2,7 +2,8 @@
 
 L = {
     "ja": {
-        "window_title": "Blackboard ツール",
+        "window_title": "TELAS",
+        "sidebar_title": "Teikyo LMS アシスタント",
         "username": "ユーザー名:",
         "password": "パスワード:",
         "login_btn": "ログイン",
@@ -81,7 +82,8 @@ L = {
         "progress_format": "{0}/{1} ファイル {2}",
     },
     "en": {
-        "window_title": "Blackboard Tool",
+        "window_title": "TELAS",
+        "sidebar_title": "Teikyo LMS Assistant",
         "username": "Username:",
         "password": "Password:",
         "login_btn": "Login",
@@ -160,7 +162,8 @@ L = {
         "progress_format": "{0}/{1} files {2}",
     },
     "zh": {
-        "window_title": "Blackboard 工具箱",
+        "window_title": "TELAS",
+        "sidebar_title": "Teikyo LMS 助理",
         "username": "用户名:",
         "password": "密码:",
         "login_btn": "登 录",
@@ -239,7 +242,8 @@ L = {
         "progress_format": "{0}/{1} 个文件 {2}",
     },
     "zh_TW": {
-        "window_title": "Blackboard 工具箱",
+        "window_title": "TELAS",
+        "sidebar_title": "Teikyo LMS 助理",
         "username": "使用者名稱:",
         "password": "密碼:",
         "login_btn": "登 入",
