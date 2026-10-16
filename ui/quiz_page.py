@@ -271,6 +271,8 @@ class QuizPage(QWidget):
             item.setTextAlignment(column, Qt.AlignmentFlag.AlignCenter)
 
     def _format_points(self, quiz):
+        if quiz.get("points_display") == "none":
+            return "—"
         possible = quiz.get("points_possible")
         if possible is None:
             return "-/-" if quiz.get("gradebook_known") else "—"
