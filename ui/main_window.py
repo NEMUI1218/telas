@@ -47,7 +47,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------- 构建
     def _build_ui(self):
         self.setWindowTitle(self.tr("window_title"))
-        self.setMinimumSize(1020, 720)
+        self.setMinimumSize(740, 470)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -251,6 +251,19 @@ class MainWindow(QMainWindow):
             cw.width() - self.toast_label.width() - 24,
             cw.height() - self.toast_label.height() - 24,
         )
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self._apply_minimum_window_frame)
+
+    def _apply_minimum_window_frame(self):
+        # macOS 的原生标题栏不属于 QWidget 内容区；让整个外框匹配参考尺寸。
+        if QApplication.platformName() == "cocoa":
+            frame = self.frameGeometry()
+            content = self.geometry()
+            extra_width = max(0, frame.width() - content.width())
+            extra_height = max(0, frame.height() - content.height())
+            self.setMinimumSize(740 - extra_width, 470 - extra_height)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
