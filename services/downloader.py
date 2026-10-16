@@ -41,15 +41,12 @@ class DownloadService:
 
             elif has_content_type(item, "resource/x-bb-folder"):
                 children = self.scan_tree(course_id, item["id"], depth + 1)
-                content_url = get_content_url(
-                    item, BASE_URL, course_id, content_id
-                )
-                is_lesson = depth == 0
                 nodes.append({
-                    "type": "lesson" if is_lesson else "other",
+                    "type": "lesson",
                     "name": title,
-                    "url": "" if is_lesson else content_url,
-                    "link": "" if is_lesson else content_url,
+                    # 各层文件夹都只用于展开目录，空文件夹也不提供链接。
+                    "url": "",
+                    "link": "",
                     "children": children,
                 })
 
