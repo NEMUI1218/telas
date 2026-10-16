@@ -271,6 +271,8 @@ class QuizPage(QWidget):
             item.setTextAlignment(column, Qt.AlignmentFlag.AlignCenter)
 
     def _format_points(self, quiz):
+        if quiz.get("points_display") == "completion":
+            return "✓" if quiz.get("completion_recorded") is True else "—"
         if quiz.get("points_display") == "none":
             return "—"
         possible = quiz.get("points_possible")
@@ -280,9 +282,7 @@ class QuizPage(QWidget):
         earned = quiz.get("points_earned")
         if earned is not None:
             return f"{self._format_number(earned)}/{possible}"
-        if quiz.get("attempts_known") and not quiz.get("attempt_count", 0):
-            return f"-/{possible}"
-        return "—"
+        return f"—/{possible}"
 
     @staticmethod
     def _format_number(value):
