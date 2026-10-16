@@ -55,8 +55,12 @@
                 )
             lesson_item.setExpanded(True)
 
-        # 成功或无结果时不显示扫描状态，错误提示仍保留。
-        self.status_label.clear()
+        if quiz_list:
+            self.status_label.setText(
+                self.ctx.tr("quiz_scan_done", len(quiz_list))
+            )
+        else:
+            self.status_label.setText(self.ctx.tr("quiz_scan_empty"))
 
     def _format_attempts(self, quiz):
         if not quiz.get("attempts_known"):
@@ -122,7 +126,3 @@
         label.setText(
             f'<a href="{safe_url}" style="color:{text_color}; '
             f'text-decoration:none; font-weight:700;"><b>{safe_title}</b></a>'
-        )
-
-    def _refresh_name_links(self):
-        for label in self.quiz_tree.findChildren(QLabel):
