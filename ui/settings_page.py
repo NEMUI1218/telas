@@ -24,7 +24,7 @@ class SettingsPage(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 32, 0, 0)
+        layout.setContentsMargins(0, 44, 0, 0)
 
         self.settings_container = QWidget()
         self.settings_container.setMaximumWidth(520)
