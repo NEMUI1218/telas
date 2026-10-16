@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QProgressBar, QStackedWidget, QHeaderView,
 )
 
+from utils.theme import colors
+
 
 class DownloadPage(QWidget):
     _CHECK_STATE_ROLE = Qt.ItemDataRole.UserRole + 3
@@ -22,6 +24,7 @@ class DownloadPage(QWidget):
         self._build_ui()
         self.ctx.signals.course_changed.connect(self.on_course_changed)
         self.ctx.signals.populate_tree.connect(self._populate_file_tree)
+        self.ctx.signals.theme_changed.connect(self._refresh_name_links)
 
     def tr(self, key, *args):
         return self.ctx.tr(key, *args)
@@ -267,15 +270,39 @@ class DownloadPage(QWidget):
             )
             link_label.setTextFormat(Qt.TextFormat.RichText)
             link_label.setTextInteractionFlags(
+            name_label.setProperty("name_link_url", url)
+            name_label.setProperty("name_link_title", name)
+            self._render_name_link(name_label)
+            name_label.setTextFormat(Qt.TextFormat.RichText)
+            name_label.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextBrowserInteraction
             )
             link_label.setOpenExternalLinks(True)
             link_label.setToolTip(url)
             cell_layout.addWidget(link_label)
+            name_label.setOpenExternalLinks(True)
+            name_label.setToolTip(url)
+        else:
+            name_label.setTextFormat(Qt.TextFormat.PlainText)
+        cell_layout.addWidget(name_label)
 
         cell_layout.addStretch(1)
 
         self.file_tree.setItemWidget(item, 0, cell)
+
+    @staticmethod
+    def _render_name_link(label):
+        url = html.escape(label.property("name_link_url"), quote=True)
+        title = html.escape(label.property("name_link_title"))
+        label.setText(
+            f'<a href="{url}" style="color:{colors()["text"]}; '
+            f'text-decoration:none; font-weight:600;">{title}</a>'
+        )
+
+    def _refresh_name_links(self):
+        for label in self.file_tree.findChildren(QLabel):
+            if label.property("name_link_url"):
+                self._render_name_link(label)
 
     def _on_item_checkbox_changed(self, item, state):
         check_state = Qt.CheckState(state)
