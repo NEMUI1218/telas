@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 
+from utils.theme import colors
+
 
 class _QuizLoadSignals(QObject):
     finished = Signal(str, object, int, int)
@@ -89,6 +91,7 @@ class QuizPage(QWidget):
 
         self.ctx.signals.course_changed.connect(self.on_course_changed)
         self.ctx.signals.login_state.connect(self._on_login_state)
+        self.ctx.signals.theme_changed.connect(self._refresh_name_links)
         self.retranslate()
         self._set_idle_state(not bool(self.ctx.current_course_id))
 
@@ -288,20 +291,33 @@ class QuizPage(QWidget):
             return str(value)
 
     def _set_name_and_url(self, item, title, url):
-        safe_title = html.escape(title)
-        content = safe_title
+        link_label = QLabel()
         if url:
-            safe_url = html.escape(url, quote=True)
-            content += (
-                f'&nbsp;&nbsp;<a href="{safe_url}">'
-                f'{html.escape(self.ctx.tr("open"))}</a>'
+            link_label.setTextFormat(Qt.TextFormat.RichText)
+            link_label.setProperty("name_link_url", url)
+            link_label.setProperty("name_link_title", title)
+            self._render_name_link(link_label)
+            link_label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextBrowserInteraction
             )
-        link_label = QLabel(content)
-        link_label.setTextFormat(Qt.TextFormat.RichText)
-        link_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextBrowserInteraction
-        )
-        link_label.setOpenExternalLinks(True)
-        if url:
+            link_label.setOpenExternalLinks(True)
             link_label.setToolTip(url)
+        else:
+            link_label.setTextFormat(Qt.TextFormat.PlainText)
+            link_label.setText(title)
         self.quiz_tree.setItemWidget(item, 0, link_label)
+
+    @staticmethod
+    def _render_name_link(label):
+        safe_url = html.escape(label.property("name_link_url"), quote=True)
+        safe_title = html.escape(label.property("name_link_title"))
+        text_color = colors()["text"]
+        label.setText(
+            f'<a href="{safe_url}" style="color:{text_color}; '
+            f'text-decoration:none; font-weight:600;">{safe_title}</a>'
+        )
+
+    def _refresh_name_links(self):
+        for label in self.quiz_tree.findChildren(QLabel):
+            if label.property("name_link_url"):
+                self._render_name_link(label)
