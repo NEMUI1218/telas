@@ -1,12 +1,4 @@
-"""顶部栏：账号状态菜单 + 学期与课程选择。
-
-保留原有的：
-1. 课程框十个全角字符宽度
-2. 学期框固定宽度
-3. 姓名和学籍番号完整显示
-4. 根据实际内容宽度自动换行
-5. 学期筛选和课程选择逻辑
-"""
+"""顶部栏：账号状态菜单 + 学期和课程选择。"""
 
 import re
 
@@ -27,38 +19,56 @@ from PySide6.QtWidgets import (
 
 
 class ElidedLabel(QLabel):
-    """账号信息标签。
-
-    保留原来的完整文字与悬停提示接口。
-    账号信息优先完整显示，由外层布局负责换行。
-    """
+    """显示账号姓名与学号，保留完整内容提示。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
         self._full_text = ""
 
-        self.setTextFormat(
-            Qt.TextFormat.PlainText
-        )
-
+        self.setTextFormat(Qt.TextFormat.PlainText)
         self.setWordWrap(False)
 
         self.setSizePolicy(
-            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Preferred,
             QSizePolicy.Policy.Preferred,
         )
 
     def set_full_text(self, text):
         self._full_text = str(text or "")
-
-        self.setText(self._full_text)
         self.setToolTip(self._full_text)
-
+        self._refresh()
         self.updateGeometry()
 
     def full_text(self):
         return self._full_text
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        hint.setWidth(
+            self.fontMetrics().horizontalAdvance(
+                self._full_text
+            )
+        )
+        return hint
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        hint.setWidth(0)
+        return hint
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._refresh()
+
+    def _refresh(self):
+        self.setText(
+            self.fontMetrics().elidedText(
+                self._full_text,
+                Qt.TextElideMode.ElideRight,
+                max(0, self.width()),
+            )
+        )
 
 
 class Header(QWidget):
@@ -74,6 +84,7 @@ class Header(QWidget):
         super().__init__(parent)
 
         self.ctx = ctx
+
         self.courses = {}
 
         self._logged_in = False
@@ -99,9 +110,6 @@ class Header(QWidget):
 
     def _build_ui(self):
 
-        # 保留原来的 QBoxLayout
-        # 它可以在横向和纵向之间动态切换
-
         root = QBoxLayout(
             QBoxLayout.Direction.TopToBottom,
             self,
@@ -121,14 +129,16 @@ class Header(QWidget):
             QSizePolicy.Policy.Fixed,
         )
 
-        # -----------------------------------------------------
+        # =====================================================
         # 账号区域
-        # -----------------------------------------------------
+        # =====================================================
 
         self.account_widget = QWidget()
 
+        self.account_widget.setFixedHeight(32)
+
         self.account_widget.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Ignored,
             QSizePolicy.Policy.Fixed,
         )
 
@@ -136,24 +146,31 @@ class Header(QWidget):
             self.account_widget
         )
 
+        # 沿用原来的账号区边距
         account_layout.setContentsMargins(
-            0, 0, 0, 0
+            9, 0, 0, 0
         )
 
-        account_layout.setSpacing(8)
+        account_layout.setSpacing(0)
 
+        # =====================================================
         # 登录状态
+        # 原来的 QLabel 外观，现在增加按钮功能
+        # =====================================================
+
         self.status_badge = QPushButton()
 
         self.status_badge.setObjectName(
-            "login_status"
+            "status_badge"
         )
 
-        self.status_badge.setFixedHeight(32)
+        self.status_badge.setFlat(True)
 
         self.status_badge.setCursor(
             Qt.CursorShape.PointingHandCursor
         )
+
+        self.status_badge.setFixedHeight(28)
 
         self.status_badge.setSizePolicy(
             QSizePolicy.Policy.Fixed,
@@ -164,7 +181,12 @@ class Header(QWidget):
             self.status_badge
         )
 
+        account_layout.addSpacing(8)
+
+        # =====================================================
         # 姓名和学籍番号
+        # =====================================================
+
         self.account_label = ElidedLabel()
 
         self.account_label.setAlignment(
@@ -183,9 +205,9 @@ class Header(QWidget):
             1,
         )
 
-        # -----------------------------------------------------
+        # =====================================================
         # 账号菜单
-        # -----------------------------------------------------
+        # =====================================================
 
         self.account_menu = QMenu(self)
 
@@ -201,10 +223,6 @@ class Header(QWidget):
             self.account_menu.addAction("")
         )
 
-        self.status_badge.setMenu(
-            self.account_menu
-        )
-
         self.login_action.triggered.connect(
             self.login_requested.emit
         )
@@ -217,9 +235,13 @@ class Header(QWidget):
             self.logout_requested.emit
         )
 
-        # -----------------------------------------------------
-        # 学期选择
-        # -----------------------------------------------------
+        self.status_badge.setMenu(
+            self.account_menu
+        )
+
+        # =====================================================
+        # 学期
+        # =====================================================
 
         self.prefix_label = QLabel()
 
@@ -242,9 +264,9 @@ class Header(QWidget):
             self._on_prefix_changed
         )
 
-        # -----------------------------------------------------
-        # 课程选择
-        # -----------------------------------------------------
+        # =====================================================
+        # 课程
+        # =====================================================
 
         self.course_label = QLabel()
 
@@ -261,16 +283,15 @@ class Header(QWidget):
             .AdjustToMinimumContentsLengthWithIcon
         )
 
-        # 恢复原来的十字符设定
         self.course_cb.setMinimumContentsLength(10)
 
         self.course_cb.currentIndexChanged.connect(
             self._on_course_index_changed
         )
 
-        # -----------------------------------------------------
-        # 共用课程选择区域
-        # -----------------------------------------------------
+        # =====================================================
+        # 课程选择区域
+        # =====================================================
 
         self._course_controls = QWidget()
 
@@ -286,8 +307,14 @@ class Header(QWidget):
 
         for index, (label, combo) in enumerate(
             (
-                (self.prefix_label, self.prefix_cb),
-                (self.course_label, self.course_cb),
+                (
+                    self.prefix_label,
+                    self.prefix_cb,
+                ),
+                (
+                    self.course_label,
+                    self.course_cb,
+                ),
             )
         ):
 
@@ -325,16 +352,14 @@ class Header(QWidget):
             Qt.AlignmentFlag.AlignRight,
         )
 
-        self._update_badge_text()
-        self._update_menu()
+        self._update_account_visibility()
 
     # =========================================================
-    # 课程选择框宽度
+    # 原始课程框宽度算法
     # =========================================================
 
     @staticmethod
     def _combo_text_width(combo, sample):
-        """计算文字、箭头、边框和内边距的实际宽度。"""
 
         combo.ensurePolished()
 
@@ -372,15 +397,14 @@ class Header(QWidget):
         )
 
     def _update_selector_widths(self):
-        """恢复原来的固定宽度算法。"""
 
-        # 学期：2026後期
+        # 学期以 2026後期 为基准
         term_width = self._combo_text_width(
             self.prefix_cb,
             "2026後期",
         )
 
-        # 课程：十个全角字符
+        # 课程以十个全角字符为基准
         course_width = self._combo_text_width(
             self.course_cb,
             "漢" * 10,
@@ -388,10 +412,6 @@ class Header(QWidget):
 
         self.prefix_cb.setFixedWidth(
             term_width
-        )
-
-        self.course_cb.setFixedWidth(
-            course_width
         )
 
         self.prefix_label.ensurePolished()
@@ -410,6 +430,10 @@ class Header(QWidget):
 
         self._term_pair.setFixedWidth(
             term_pair_width
+        )
+
+        self.course_cb.setFixedWidth(
+            course_width
         )
 
         self._course_pair.setFixedWidth(
@@ -441,11 +465,10 @@ class Header(QWidget):
         self._update_responsive_layout()
 
     # =========================================================
-    # 响应式布局
+    # 原始响应式布局
     # =========================================================
 
     def _update_responsive_layout(self):
-        """根据账号完整文字和课程框实际宽度决定是否换行。"""
 
         if self._updating_layout:
             return
@@ -453,13 +476,13 @@ class Header(QWidget):
         self._updating_layout = True
 
         try:
+
             account_layout = (
                 self.account_widget.layout()
             )
 
             account_layout.invalidate()
 
-            # 使用完整账号信息的实际宽度
             account_width = (
                 account_layout.sizeHint().width()
             )
@@ -486,7 +509,6 @@ class Header(QWidget):
                 + self._course_controls.minimumWidth()
             )
 
-            # 不再使用固定的 650px 判断
             compact = (
                 available_width < required_width
             )
@@ -496,6 +518,7 @@ class Header(QWidget):
             )
 
             if changed:
+
                 self._compact = compact
 
                 self._root_layout.setDirection(
@@ -516,14 +539,14 @@ class Header(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-
         self._update_responsive_layout()
 
     # =========================================================
-    # 账号状态
+    # 状态按钮样式
     # =========================================================
 
     def _update_badge_text(self):
+
         key = (
             "logged_in"
             if self._logged_in
@@ -531,7 +554,7 @@ class Header(QWidget):
         )
 
         self.status_badge.setText(
-            "●  " + self.tr(key) + "  ▾"
+            "●  " + self.tr(key)
         )
 
         self.status_badge.setProperty(
@@ -539,14 +562,64 @@ class Header(QWidget):
             "on" if self._logged_in else "off",
         )
 
-        style = self.status_badge.style()
+        # 让 QPushButton 继续呈现原来状态标签的视觉效果。
+        # 这里不依赖 theme.py 中针对 QLabel 的选择器。
 
-        style.unpolish(self.status_badge)
-        style.polish(self.status_badge)
+        color = (
+            "#22A06B"
+            if self._logged_in
+            else "#D64545"
+        )
+
+        self.status_badge.setStyleSheet(
+            f"""
+            QPushButton#status_badge {{
+                color: {color};
+                background: transparent;
+                border: none;
+                border-radius: 4px;
+                padding: 0px;
+                margin: 0px;
+                text-align: left;
+                font-weight: 600;
+            }}
+
+            QPushButton#status_badge:hover {{
+                background: rgba(128, 128, 128, 0.08);
+            }}
+
+            QPushButton#status_badge:pressed {{
+                background: rgba(128, 128, 128, 0.14);
+            }}
+
+            QPushButton#status_badge::menu-indicator {{
+                image: none;
+                width: 0px;
+            }}
+            """
+        )
+
+        self.status_badge.style().unpolish(
+            self.status_badge
+        )
+
+        self.status_badge.style().polish(
+            self.status_badge
+        )
 
         self.status_badge.updateGeometry()
+        self.status_badge.update()
 
-    def _update_menu(self):
+    # =========================================================
+    # 账号状态
+    # =========================================================
+
+    def _update_account_visibility(self):
+
+        self.account_label.setVisible(
+            self._logged_in
+        )
+
         self.login_action.setVisible(
             not self._logged_in
         )
@@ -560,30 +633,34 @@ class Header(QWidget):
         )
 
     def set_login_status(self, ok):
+
         self._logged_in = bool(ok)
 
         if not ok:
             self.account_label.set_full_text("")
 
         self._update_badge_text()
-        self._update_menu()
+
+        self._update_account_visibility()
 
         self._update_responsive_layout()
 
     def set_login_busy(self, busy):
+
         self._login_busy = bool(busy)
 
         self.status_badge.setEnabled(
             not busy
         )
 
+        self._update_responsive_layout()
+
     def set_account(self, name, login_id):
-        """完整显示姓名和学籍番号。"""
 
         parts = [
-            str(part).strip()
-            for part in (name, login_id)
-            if part and str(part).strip()
+            str(p).strip()
+            for p in (name, login_id)
+            if p and str(p).strip()
         ]
 
         self.account_label.set_full_text(
@@ -597,9 +674,10 @@ class Header(QWidget):
     # =========================================================
 
     def reset(self):
+
         self.set_login_status(False)
 
-        self.set_account("", "")
+        self.account_label.set_full_text("")
 
         self.courses = {}
 
@@ -629,26 +707,33 @@ class Header(QWidget):
     # =========================================================
 
     def set_courses(self, courses):
+
         self.courses_loaded.emit(
             courses or {}
         )
 
     @staticmethod
     def _term_prefix(course_name):
+
         match = re.match(
             r"^\s*(\d{4}(?:年度)?\s*(?:前期|後期|后期))",
             str(course_name),
         )
 
-        return (
-            re.sub(r"\s+", "", match.group(1))
-            if match
-            else None
-        )
+        if match:
+            return re.sub(
+                r"\s+",
+                "",
+                match.group(1),
+            )
+
+        return None
 
     @classmethod
-    def _display_course_name(cls, course_name):
-        """去掉学期前缀，但保留完整课程名称。"""
+    def _display_course_name(
+        cls,
+        course_name,
+    ):
 
         if cls._term_prefix(course_name) is None:
             return course_name
@@ -660,9 +745,12 @@ class Header(QWidget):
         ).strip()
 
     def _populate_courses(self, courses):
-        self.courses = dict(courses or {})
 
-        names = list(self.courses.keys())
+        self.courses = courses or {}
+
+        names = list(
+            self.courses.keys()
+        )
 
         terms = {
             term
@@ -692,6 +780,7 @@ class Header(QWidget):
         )
 
         self.prefix_cb.blockSignals(True)
+
         self.prefix_cb.clear()
 
         self.prefix_cb.addItem(
@@ -709,12 +798,12 @@ class Header(QWidget):
             self._term_prefix(name) is None
             for name in names
         ):
+
             self.prefix_cb.addItem(
                 self.tr("other_term"),
                 "__other__",
             )
 
-        # 默认最近学期
         self.prefix_cb.setCurrentIndex(
             1 if terms else 0
         )
@@ -724,12 +813,14 @@ class Header(QWidget):
         self._rebuild_course_options()
 
     def _rebuild_course_options(self):
+
         term = (
             self.prefix_cb.currentData()
             or ""
         )
 
         if term == "__other__":
+
             names = [
                 name
                 for name in self.courses
@@ -737,6 +828,7 @@ class Header(QWidget):
             ]
 
         elif term:
+
             names = [
                 name
                 for name in self.courses
@@ -744,6 +836,7 @@ class Header(QWidget):
             ]
 
         else:
+
             names = list(self.courses)
 
         old_name = (
@@ -753,64 +846,82 @@ class Header(QWidget):
         )
 
         self.course_cb.blockSignals(True)
+
         self.course_cb.clear()
 
         self.course_cb.addItem(
-            self.tr("placeholder_course"),
-            None,
+            self.tr("placeholder_course")
         )
 
         for name in names:
-            # 显示完整课程名，选择框保持固定宽度
+
             self.course_cb.addItem(
                 self._display_course_name(name),
                 name,
             )
 
         if old_name in names:
+
             self.course_cb.setCurrentIndex(
                 names.index(old_name) + 1
             )
+
         else:
+
             self.course_cb.setCurrentIndex(0)
 
         self.course_cb.blockSignals(False)
 
         if old_name and old_name not in names:
-            self.course_selected.emit("", "")
+
+            self.course_selected.emit(
+                "",
+                "",
+            )
 
     def _on_prefix_changed(self, _index):
+
         self._rebuild_course_options()
 
     def _on_course_index_changed(self, *_):
-        idx = self.course_cb.currentIndex()
+
+        idx = (
+            self.course_cb.currentIndex()
+        )
 
         if idx <= 0:
-            self.course_selected.emit("", "")
+
+            self.course_selected.emit(
+                "",
+                "",
+            )
+
             return
 
-        name = self.course_cb.currentData()
-
-        if name not in self.courses:
-            return
-
-        course = self.courses[name]
-
-        if isinstance(course, dict):
-            course_id = course.get("id", "")
-        else:
-            course_id = course
-
-        self.course_selected.emit(
-            str(course_id),
-            str(name),
+        name = (
+            self.course_cb.currentData()
         )
+
+        if name in self.courses:
+
+            course = self.courses[name]
+
+            if isinstance(course, dict):
+                course_id = course.get("id", "")
+            else:
+                course_id = course
+
+            self.course_selected.emit(
+                str(course_id),
+                str(name),
+            )
 
     # =========================================================
     # 国际化
     # =========================================================
 
     def retranslate(self):
+
         self.course_label.setText(
             self.tr("course_name")
         )
@@ -832,6 +943,7 @@ class Header(QWidget):
         )
 
         if self.prefix_cb.count():
+
             self.prefix_cb.setItemText(
                 0,
                 self.tr("all_terms"),
@@ -841,16 +953,19 @@ class Header(QWidget):
                 1,
                 self.prefix_cb.count(),
             ):
+
                 if (
                     self.prefix_cb.itemData(index)
                     == "__other__"
                 ):
+
                     self.prefix_cb.setItemText(
                         index,
                         self.tr("other_term"),
                     )
 
         if self.course_cb.count():
+
             self.course_cb.setItemText(
                 0,
                 self.tr("placeholder_course"),
@@ -858,5 +973,4 @@ class Header(QWidget):
 
         self._update_badge_text()
 
-        # 语言切换后重新计算真实宽度
         self._update_selector_widths()
