@@ -13,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import quote, urlparse
 
-from services.content_types import get_content_url, has_content_type
+from services.content_types import get_content_url, has_content_type, is_content_folder
 from utils.paths import data_path
 
 
@@ -429,18 +429,20 @@ class BlackboardAPI:
 
                         self.log(f"[测验识别] 找到测验：{title}")
 
-                # 只对可能是文件夹的内容继续递归。
+                # 保留页面内部的遍历，但只有真实目录才增加课时层级。
                 if has_content_type(item, "resource/x-bb-folder"):
-                    folder_title = item.get("title") or "未命名课时"
-                    folder_path = parent_path + [folder_title]
-                    folders.append({
-                        "id": item_id,
-                        "title": folder_title,
-                        "path": folder_path,
-                        "url": get_content_url(
-                            item, BASE_URL, course_id, content_id
-                        ),
-                    })
+                    folder_path = parent_path
+                    if is_content_folder(item):
+                        folder_title = item.get("title") or "未命名课时"
+                        folder_path = parent_path + [folder_title]
+                        folders.append({
+                            "id": item_id,
+                            "title": folder_title,
+                            "path": folder_path,
+                            "url": get_content_url(
+                                item, BASE_URL, course_id, content_id
+                            ),
+                        })
                     if not walk(item_id, folder_path):
                         return False
 
