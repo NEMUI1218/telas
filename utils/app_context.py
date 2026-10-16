@@ -24,4 +24,8 @@ class AppContext:
         return self.i18n.tr(key, *args)
 
     def log(self, *args):
-        self.signals.log.emit(" ".join(map(str, args)))
+        text = " ".join(map(str, args))
+        legacy_prefix = "[测验识别]"
+        if text.startswith(legacy_prefix):
+            text = f"[{self.tr('tab_quiz')}]" + text[len(legacy_prefix):]
+        self.signals.log.emit(text)
