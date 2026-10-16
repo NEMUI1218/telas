@@ -439,14 +439,16 @@ class BlackboardAPI:
                             or "未命名测验"
                         )
 
-                        quizzes.append({
+                        quiz = {
                             "id": item_id,
                             "title": title,
                             "path": parent_path,
                             "url": get_content_url(
                                 item, BASE_URL, course_id, content_id
                             ),
-                        })
+                        }
+                        self._apply_assessment_grade_settings(quiz, item)
+                        quizzes.append(quiz)
 
                         self.log(f"[测验识别] 找到测验：{title}")
                     # 已确认的作业是最终条目，不再作为目录继续展开。
@@ -538,15 +540,25 @@ class BlackboardAPI:
             for column in columns
             if isinstance(column, dict) and column.get("contentId")
         }
+        columns_by_id = {
+            str(column.get("id")): column
+            for column in columns
+            if isinstance(column, dict) and column.get("id")
+        }
         encoded_user_id = quote(str(user_id), safe="")
 
         for quiz in quizzes:
-            column = columns_by_content.get(str(quiz.get("id")))
+            column = (
+                columns_by_id.get(str(quiz.get("grade_column_id")))
+                or columns_by_content.get(str(quiz.get("id")))
+            )
             if not column:
                 continue
 
             score_info = column.get("score") or {}
-            quiz["points_possible"] = self._grade_number(score_info.get("possible"))
+            possible = self._grade_number(score_info.get("possible"))
+            if possible is not None and possible >= 0:
+                quiz["points_possible"] = possible
             grading = column.get("grading") or {}
             quiz["attempts_allowed"] = grading.get("attemptsAllowed")
             quiz["attempts_allowed_known"] = (
@@ -623,14 +635,19 @@ class BlackboardAPI:
                     continue
                 candidate = {"points_possible": quiz.get("points_possible")}
                 self._apply_display_grade(candidate, attempt.get("displayGrade"))
+                if candidate.get("points_display") == "completion":
+                    quiz["points_display"] = "completion"
+                    quiz["completion_recorded"] = candidate.get("completion_recorded", False)
+                    continue
                 if candidate.get("points_display") == "none":
                     quiz["points_display"] = "none"
                     break
                 if candidate.get("points_earned") is not None:
+                    quiz["points_display"] = "numeric"
                     scored.append(candidate["points_earned"])
                     quiz["points_possible"] = candidate.get("points_possible")
 
-            if scored and quiz.get("points_display") != "none":
+            if scored and quiz.get("points_display") not in ("none", "completion"):
                 scoring_model = grading.get("scoringModel", "Last")
                 if scoring_model == "First":
                     earned = scored[0]
@@ -643,6 +660,39 @@ class BlackboardAPI:
                 else:
                     earned = scored[-1]
                 quiz["points_earned"] = earned
+
+    @classmethod
+    def _apply_assessment_grade_settings(cls, quiz, item):
+        """从题目设置判断是否计分，尚未评分时也能保留满分。"""
+        detail = item.get("contentDetail") or {}
+        if not isinstance(detail, dict):
+            return
+        for resource_type, payload in detail.items():
+            if not has_content_type(item, resource_type):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            for deployment in (
+                payload, payload.get("test"), payload.get("survey"),
+                payload.get("assignment"),
+            ):
+                if not isinstance(deployment, dict):
+                    continue
+                column = deployment.get("gradingColumn")
+                if not isinstance(column, dict):
+                    continue
+                if column.get("id"):
+                    quiz["grade_column_id"] = str(column["id"])
+                scorable = column.get("scorable")
+                if scorable is False:
+                    quiz["points_display"] = "completion"
+                    quiz["completion_recorded"] = False
+                elif scorable is True:
+                    quiz["points_display"] = "numeric"
+                    possible = cls._grade_number(column.get("possible"))
+                    if possible is not None and possible >= 0:
+                        quiz["points_possible"] = possible
+                return
 
     @staticmethod
     def _grade_number(value):
@@ -661,7 +711,19 @@ class BlackboardAPI:
         if not isinstance(display_grade, dict):
             return
         scale = display_grade.get("scaleType")
-        if scale in ("CompleteIncomplete", "Text", "Tabular"):
+        if scale == "CompleteIncomplete":
+            quiz["points_display"] = "completion"
+            quiz.pop("points_earned", None)
+            text = display_grade.get("text")
+            # 匹配平台的明确完成标记；“Incomplete/未完了”等不会误中。
+            quiz["completion_recorded"] = (
+                isinstance(text, str)
+                and text.strip().casefold() in (
+                    "complete", "completed", "完了", "完成", "已完成", "✓", "✔",
+                )
+            )
+            return
+        if scale in ("Text", "Tabular"):
             quiz["points_display"] = "none"
             quiz.pop("points_earned", None)
             return
