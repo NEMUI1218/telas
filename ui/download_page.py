@@ -241,6 +241,9 @@ class DownloadPage(QWidget):
                 parent.addChild(item)
             self._set_name_and_url(item, name, node.get("link", ""))
             self._add_tree_items(item, node.get("children", []))
+            # 资料页的附件默认可见；课时目录保留原来的展开行为。
+            if node.get("type") == "other" and item.childCount():
+                item.setExpanded(True)
 
     def _set_name_and_url(self, item, name, url):
         cell = QWidget()
