@@ -80,7 +80,23 @@ L = {
         "log_show": "ログを表示",
         "empty_state": "コースを選択してスキャンを開始",
         "progress_format": "{0}/{1} ファイル {2}",
+
+        # 账号管理
+        "login_account": "ログイン",
+        "logout": "ログアウト",
+        "logout_confirm_title": "ログアウトの確認",
+        "logout_confirm": "現在のアカウントからログアウトしますか？",
+        "logout_warning": "ログアウトすると、保存されたセッション、ユーザー名、パスワードが削除されます。",
+        "confirm": "確認",
+        "cancel": "キャンセル",
+        "login_retry": "ログインに失敗しました。入力内容を確認して再試行してください。",
+        "restore_account": "元のアカウントに再ログインしています...",
+        "restore_failed": "元のアカウントへの再ログインに失敗しました。手動でログインしてください。",
+        "restore_unavailable": "以前のログイン情報が保存されていないため、自動復元できません。",
+        "credentials_required": "ユーザー名とパスワードを入力してください。",
+        "logout_success": "ログアウトしました。",
     },
+
     "en": {
         "window_title": "TELAS",
         "sidebar_title": "Teikyo LMS Assistant",
@@ -160,7 +176,23 @@ L = {
         "log_show": "Show Log",
         "empty_state": "Select course and click Scan to begin",
         "progress_format": "{0}/{1} files {2}",
+
+        # Account management
+        "login_account": "Log in",
+        "logout": "Log out",
+        "logout_confirm_title": "Confirm logout",
+        "logout_confirm": "Are you sure you want to log out?",
+        "logout_warning": "Logging out will delete the saved session, username, and password.",
+        "confirm": "Confirm",
+        "cancel": "Cancel",
+        "login_retry": "Login failed. Please check your credentials and try again.",
+        "restore_account": "Signing back into the previous account...",
+        "restore_failed": "Could not restore the previous account. Please log in manually.",
+        "restore_unavailable": "Previous credentials are unavailable. Automatic login cannot be restored.",
+        "credentials_required": "Please enter your username and password.",
+        "logout_success": "Logged out.",
     },
+
     "zh": {
         "window_title": "TELAS",
         "sidebar_title": "Teikyo LMS 助理",
@@ -240,7 +272,23 @@ L = {
         "log_show": "显示日志",
         "empty_state": "选择课程后点击扫描",
         "progress_format": "{0}/{1} 个文件 {2}",
+
+        # 账号管理
+        "login_account": "登录账号",
+        "logout": "退出登录",
+        "logout_confirm_title": "确认退出登录",
+        "logout_confirm": "确定要退出当前账号吗？",
+        "logout_warning": "退出登录后，将清除本地保存的登录会话、账号和密码。",
+        "confirm": "确定",
+        "cancel": "取消",
+        "login_retry": "登录失败，请检查账号和密码后重试。",
+        "restore_account": "正在重新登录原账号...",
+        "restore_failed": "原账号重新登录失败，请手动登录。",
+        "restore_unavailable": "没有保存原账号密码，无法自动恢复登录。",
+        "credentials_required": "请输入用户名和密码。",
+        "logout_success": "已退出登录。",
     },
+
     "zh_TW": {
         "window_title": "TELAS",
         "sidebar_title": "Teikyo LMS 助理",
@@ -320,6 +368,21 @@ L = {
         "log_show": "顯示記錄",
         "empty_state": "選擇課程後開始掃描",
         "progress_format": "{0}/{1} 個檔案 {2}",
+
+        # 帳號管理
+        "login_account": "登入帳號",
+        "logout": "登出",
+        "logout_confirm_title": "確認登出",
+        "logout_confirm": "確定要登出目前帳號嗎？",
+        "logout_warning": "登出後，將清除本機儲存的登入工作階段、帳號和密碼。",
+        "confirm": "確定",
+        "cancel": "取消",
+        "login_retry": "登入失敗，請檢查帳號和密碼後重試。",
+        "restore_account": "正在重新登入原帳號...",
+        "restore_failed": "原帳號重新登入失敗，請手動登入。",
+        "restore_unavailable": "沒有儲存原帳號密碼，無法自動恢復登入。",
+        "credentials_required": "請輸入使用者名稱和密碼。",
+        "logout_success": "已登出。",
     },
 }
 
