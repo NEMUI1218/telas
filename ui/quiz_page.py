@@ -38,7 +38,7 @@ class QuizPage(QWidget):
 
         self.toolbar_widget = QWidget()
         toolbar = QHBoxLayout(self.toolbar_widget)
-        toolbar.setContentsMargins(0, 0, 9, 0)
+        toolbar.setContentsMargins(9, 0, 9, 0)
         self.status_label = QLabel()
         self.status_label.setFixedHeight(34)
         self.status_label.setSizePolicy(
