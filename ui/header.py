@@ -1,10 +1,10 @@
 """顶部栏：登录框（页0）/ 已登录状态（页1） + 课程选择。"""
 import re
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QRect
 from PySide6.QtWidgets import (
     QWidget, QBoxLayout, QLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QStackedWidget,
-    QSizePolicy,
+    QSizePolicy, QStyle, QStyleOptionComboBox,
 )
 
 
@@ -19,12 +19,23 @@ class ElidedLabel(QLabel):
         self._full_text = ""
         # 姓名来自服务器，按纯文本显示
         self.setTextFormat(Qt.TextFormat.PlainText)
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
     def set_full_text(self, text):
         self._full_text = text
         self.setToolTip(text)
         self._refresh()
+        self.updateGeometry()
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        hint.setWidth(self.fontMetrics().horizontalAdvance(self._full_text))
+        return hint
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        hint.setWidth(0)
+        return hint
 
     def full_text(self):
         return self._full_text
@@ -67,9 +78,8 @@ class Header(QWidget):
 
         self.stack = QStackedWidget()
         self.stack.setFixedHeight(32)
-        # 登录后这一格要放下「已登录 + 姓名 · 学籍番号 + 切换账号」，
-        # 所以多出来的宽度由它和课程下拉框按 3:2 分
-        root.addWidget(self.stack, 3)
+        # 账号区域使用选择栏之外的剩余宽度，长姓名仍可显示省略号。
+        root.addWidget(self.stack, 1)
 
         # ---- 页 0：登录 ----
         login_page = QWidget()
@@ -110,45 +120,44 @@ class Header(QWidget):
         logged_in_page = QWidget()
         logged_layout = QHBoxLayout(logged_in_page)
         logged_layout.setContentsMargins(0, 0, 0, 0)
-        logged_layout.setSpacing(8)
+        logged_layout.setSpacing(0)
 
         self.status_badge = QLabel()
         self.status_badge.setObjectName("status_badge")
         logged_layout.addWidget(self.status_badge)
+        logged_layout.addSpacing(8)
 
-        # 是谁登录的：「姓名 · 学籍番号」。占满这一页剩下的宽度，放不下就截断。
+        # 姓名按文字宽度显示，切换按钮紧随其后；不足时只截断姓名。
         self.account_label = ElidedLabel()
-        logged_layout.addWidget(self.account_label, 1)
+        logged_layout.addWidget(self.account_label)
+        logged_layout.addSpacing(6)
 
         self.switch_btn = QPushButton()
         self.switch_btn.setObjectName("ghost")
         self.switch_btn.setFixedHeight(28)
         self.switch_btn.clicked.connect(self.switch_requested.emit)
         logged_layout.addWidget(self.switch_btn)
+        logged_layout.addStretch(1)
 
         # ---- 共用课程选择（放在 stack 之后） ----
         self.prefix_label = QLabel()
         self.prefix_label.setObjectName("field_label")
         self.prefix_cb = QComboBox()
         self.prefix_cb.setFixedHeight(32)
-        self.prefix_cb.setMinimumWidth(110)
-        self.prefix_cb.setMaximumWidth(160)
         self.prefix_cb.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
-        self.prefix_cb.setMinimumContentsLength(1)
+        self.prefix_cb.setMinimumContentsLength(6)
         self.prefix_cb.currentIndexChanged.connect(self._on_prefix_changed)
 
         self.course_label = QLabel()
         self.course_label.setObjectName("field_label")
         self.course_cb = QComboBox()
         self.course_cb.setFixedHeight(32)
-        self.course_cb.setMinimumWidth(160)
-        self.course_cb.setMaximumWidth(400)
         self.course_cb.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
-        self.course_cb.setMinimumContentsLength(1)
+        self.course_cb.setMinimumContentsLength(12)
         self.course_cb.currentIndexChanged.connect(self._on_course_index_changed)
 
         self.stack.addWidget(login_page)        # page 0
@@ -156,18 +165,77 @@ class Header(QWidget):
         self.stack.setCurrentIndex(0)
 
         # 窄窗口下把课程选择放到第二行，宽窗口下仍与账号信息并排。
-        course_controls = QWidget()
-        course_layout = QHBoxLayout(course_controls)
+        self._course_controls = QWidget()
+        course_layout = QHBoxLayout(self._course_controls)
         course_layout.setContentsMargins(0, 0, 0, 0)
-        course_layout.setSpacing(0)
-        course_layout.addWidget(self.prefix_label)
-        course_layout.addSpacing(6)
-        course_layout.addWidget(self.prefix_cb, 1)
-        course_layout.addSpacing(10)
-        course_layout.addWidget(self.course_label)
-        course_layout.addSpacing(8)
-        course_layout.addWidget(self.course_cb, 2)
-        root.addWidget(course_controls, 3)
+        course_layout.setSpacing(16)
+        for index, (label, combo) in enumerate((
+            (self.prefix_label, self.prefix_cb),
+            (self.course_label, self.course_cb),
+        )):
+            label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+            pair = QWidget()
+            pair_layout = QHBoxLayout(pair)
+            pair_layout.setContentsMargins(0, 0, 0, 0)
+            pair_layout.setSpacing(6)
+            pair_layout.addWidget(label)
+            pair_layout.addWidget(combo, 1)
+            course_layout.addWidget(pair, index)
+            if index == 0:
+                self._term_pair = pair
+            else:
+                self._course_pair = pair
+        root.addWidget(self._course_controls, 0, Qt.AlignmentFlag.AlignRight)
+
+    @staticmethod
+    def _combo_text_width(combo, sample):
+        """只计算文字区，再加上样式实际占用的箭头、边框和内边距。"""
+        combo.ensurePolished()
+        option = QStyleOptionComboBox()
+        option.initFrom(combo)
+        option.editable = combo.isEditable()
+        option.frame = True
+        option.rect = QRect(0, 0, 1000, combo.height())
+        text_rect = combo.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox,
+            option,
+            QStyle.SubControl.SC_ComboBoxEditField,
+            combo,
+        )
+        decoration_width = option.rect.width() - text_rect.width()
+        return combo.fontMetrics().horizontalAdvance(sample) + decoration_width
+
+    def _update_selector_widths(self):
+        # 学期以「2026後期」六个字符为基准，课程以十二个中日文字格为基准。
+        term_width = self._combo_text_width(self.prefix_cb, "2026後期")
+        course_width = self._combo_text_width(self.course_cb, "漢" * 12)
+        self.prefix_cb.setFixedWidth(term_width)
+        self.prefix_label.ensurePolished()
+        self.course_label.ensurePolished()
+        term_pair_width = self.prefix_label.sizeHint().width() + 6 + term_width
+        course_label_width = self.course_label.sizeHint().width() + 6
+        self._term_pair.setFixedWidth(term_pair_width)
+        course_max = course_width if self._compact else max(course_width, 400)
+        self.course_cb.setMinimumWidth(course_width)
+        self.course_cb.setMaximumWidth(course_max)
+        self._course_pair.setMinimumWidth(course_label_width + course_width)
+        self._course_pair.setMaximumWidth(course_label_width + course_max)
+        self._course_controls.setMinimumWidth(
+            term_pair_width + 16 + course_label_width + course_width
+        )
+        self._course_controls.setMaximumWidth(
+            term_pair_width + 16 + course_label_width + course_max
+        )
+        self._course_controls.setSizePolicy(
+            QSizePolicy.Policy.Maximum if self._compact else QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        self._root_layout.setStretch(0, 1 if self._compact else 3)
+        self._root_layout.setStretch(1, 0 if self._compact else 3)
+        self._root_layout.setAlignment(
+            self._course_controls,
+            Qt.AlignmentFlag.AlignRight if self._compact else Qt.AlignmentFlag.AlignVCenter,
+        )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -179,6 +247,7 @@ class Header(QWidget):
                 if compact else QBoxLayout.Direction.LeftToRight
             )
             self._root_layout.setSpacing(8 if compact else 16)
+            self._update_selector_widths()
             self.updateGeometry()
 
     def retranslate(self):
@@ -200,6 +269,7 @@ class Header(QWidget):
         if self.login_btn.isEnabled():
             self.login_btn.setText(self.tr("login_btn"))
         self._update_badge_text()
+        self._update_selector_widths()
 
     def _update_badge_text(self):
         key = "logged_in" if self._logged_in else "logged_out"
