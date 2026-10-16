@@ -309,12 +309,15 @@ class QuizPage(QWidget):
 
     @staticmethod
     def _render_name_link(label):
+        font = label.font()
+        font.setBold(True)
+        label.setFont(font)
         safe_url = html.escape(label.property("name_link_url"), quote=True)
         safe_title = html.escape(label.property("name_link_title"))
         text_color = colors()["text"]
         label.setText(
             f'<a href="{safe_url}" style="color:{text_color}; '
-            f'text-decoration:none; font-weight:600;">{safe_title}</a>'
+            f'text-decoration:none; font-weight:700;"><b>{safe_title}</b></a>'
         )
 
     def _refresh_name_links(self):
