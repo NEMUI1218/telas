@@ -1,4 +1,4 @@
-"""Blackboard 工具箱 — 程序入口。"""
+"""TELAS — 程序入口。"""
 import sys
 
 from PySide6.QtWidgets import QApplication
@@ -8,7 +8,8 @@ from ui.main_window import MainWindow
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("BlackboardTool")
+    app.setApplicationName("TELAS")
+    app.setApplicationDisplayName("TELAS")
     app.setOrganizationName("Teikyo")
     window = MainWindow()
     window.show()
