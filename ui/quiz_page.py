@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QTreeWidget,
     QTreeWidgetItem,
     QHeaderView,
+    QSizePolicy,
 )
 
 
@@ -38,11 +39,13 @@ class QuizPage(QWidget):
         toolbar.setContentsMargins(0, 0, 0, 0)
         self.status_label = QLabel()
         self.status_label.setFixedHeight(34)
+        self.status_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
+        )
         self.status_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
-        toolbar.addWidget(self.status_label)
-        toolbar.addStretch()
+        toolbar.addWidget(self.status_label, 1)
 
         self.refresh_btn = QPushButton()
         self.refresh_btn.setObjectName("secondary")
@@ -71,12 +74,12 @@ class QuizPage(QWidget):
         self.quiz_tree.header().resizeSection(1, 110)
         self.quiz_tree.header().resizeSection(2, 90)
         self.quiz_tree.header().resizeSection(3, 90)
-        tree_container = QWidget()
-        tree_layout = QHBoxLayout(tree_container)
+        self.tree_container = QWidget()
+        tree_layout = QHBoxLayout(self.tree_container)
         tree_layout.setContentsMargins(9, 0, 9, 0)
         tree_layout.setSpacing(0)
         tree_layout.addWidget(self.quiz_tree)
-        layout.addWidget(tree_container, 1)
+        layout.addWidget(self.tree_container, 1)
 
         self.empty_label = QLabel()
         self.empty_label.setObjectName("empty_state")
@@ -118,7 +121,7 @@ class QuizPage(QWidget):
 
     def _set_idle_state(self, idle):
         self.toolbar_widget.setVisible(not idle)
-        self.quiz_tree.setVisible(not idle)
+        self.tree_container.setVisible(not idle)
         self.empty_label.setVisible(idle)
 
     def refresh_quizzes(self):
