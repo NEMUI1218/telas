@@ -4,12 +4,49 @@ from urllib.parse import urlencode, urljoin
 
 
 def has_content_type(item, resource_type):
-    """Match the handler recognition used by course-content scanning."""
-    detail = item.get("contentDetail") or {}
+    """Use the explicit handler ID before falling back to content details."""
     handler = item.get("contentHandler", "")
     if isinstance(handler, dict):
         handler = handler.get("id", "")
-    return resource_type in detail or handler == resource_type
+    if isinstance(handler, str) and handler.strip():
+        return handler.strip() == resource_type
+    detail = item.get("contentDetail") or {}
+    return isinstance(detail, dict) and resource_type in detail
+
+
+def is_content_page(item):
+    """Identify documents and folders explicitly marked as Ultra pages."""
+    if has_content_type(item, "resource/x-bb-document"):
+        return True
+    if not has_content_type(item, "resource/x-bb-folder"):
+        return False
+
+    handler = item.get("contentHandler")
+    detail = item.get("contentDetail") or {}
+    folder_detail = (
+        detail.get("resource/x-bb-folder")
+        if isinstance(detail, dict) else None
+    )
+    for source in (handler, folder_detail):
+        if not isinstance(source, dict):
+            continue
+        flag = source.get("isBbPage")
+        if isinstance(flag, bool):
+            return flag
+        if isinstance(flag, str):
+            normalized = flag.strip().lower()
+            if normalized in ("true", "false"):
+                return normalized == "true"
+    # Missing page metadata does not turn an ordinary folder into a page.
+    return False
+
+
+def is_content_folder(item):
+    """Recognize a content directory while excluding document page wrappers."""
+    return (
+        has_content_type(item, "resource/x-bb-folder")
+        and not is_content_page(item)
+    )
 
 
 def get_content_url(item, base_url, course_id=None, parent_id=None):
