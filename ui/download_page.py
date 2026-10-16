@@ -55,7 +55,7 @@ class DownloadPage(QWidget):
 
         # 保存路径：一行，标签在左
         path_layout = QHBoxLayout()
-        path_layout.setContentsMargins(0, 0, 9, 0)
+        path_layout.setContentsMargins(9, 0, 9, 0)
         path_layout.setSpacing(8)
         self.save_label = QLabel()
         self.save_label.setObjectName("field_label")
@@ -80,7 +80,7 @@ class DownloadPage(QWidget):
 
         # 工具行：左边全选，右边扫描（次要）和下载（主要）
         action_layout = QHBoxLayout()
-        action_layout.setContentsMargins(0, 0, 9, 0)
+        action_layout.setContentsMargins(9, 0, 9, 0)
         action_layout.setSpacing(8)
 
         self.select_all_cb = QCheckBox()
