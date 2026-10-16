@@ -260,16 +260,7 @@ class DownloadPage(QWidget):
         cell_layout.addWidget(checkbox)
 
         name_label = QLabel(name)
-        name_label.setTextFormat(Qt.TextFormat.PlainText)
-        cell_layout.addWidget(name_label)
-
         if url:
-            safe_url = html.escape(url, quote=True)
-            link_label = QLabel(
-                f'<a href="{safe_url}">{html.escape(self.tr("open"))}</a>'
-            )
-            link_label.setTextFormat(Qt.TextFormat.RichText)
-            link_label.setTextInteractionFlags(
             name_label.setProperty("name_link_url", url)
             name_label.setProperty("name_link_title", name)
             self._render_name_link(name_label)
@@ -277,9 +268,6 @@ class DownloadPage(QWidget):
             name_label.setTextInteractionFlags(
                 Qt.TextInteractionFlag.TextBrowserInteraction
             )
-            link_label.setOpenExternalLinks(True)
-            link_label.setToolTip(url)
-            cell_layout.addWidget(link_label)
             name_label.setOpenExternalLinks(True)
             name_label.setToolTip(url)
         else:
