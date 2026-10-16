@@ -121,7 +121,7 @@ class Header(QWidget):
         # ---- 页 1：已登录 ----
         logged_in_page = QWidget()
         logged_layout = QHBoxLayout(logged_in_page)
-        logged_layout.setContentsMargins(0, 0, 0, 0)
+        logged_layout.setContentsMargins(9, 0, 0, 0)
         logged_layout.setSpacing(0)
 
         self.status_badge = QLabel()
