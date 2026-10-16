@@ -24,8 +24,7 @@ class SettingsPage(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addStretch(1)
+        layout.setContentsMargins(0, 32, 0, 0)
 
         self.settings_container = QWidget()
         self.settings_container.setMaximumWidth(520)
@@ -116,7 +115,10 @@ class SettingsPage(QWidget):
         )
 
         settings_layout.addWidget(self.download_group)
-        layout.addWidget(self.settings_container, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(
+            self.settings_container, 0,
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+        )
         layout.addStretch(1)
 
     def retranslate(self):
