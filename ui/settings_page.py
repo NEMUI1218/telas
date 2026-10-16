@@ -1,4 +1,5 @@
 """设置页：语言 + 主题。"""
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QComboBox
 
 from utils.theme import apply_theme
@@ -55,7 +56,7 @@ class SettingsPage(QWidget):
         theme_row.addWidget(self.theme_cb)
         form_layout.addLayout(theme_row)
 
-        layout.addWidget(self.appearance_group)
+        layout.addWidget(self.appearance_group, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch()
 
     def retranslate(self):
