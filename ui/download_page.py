@@ -1,12 +1,13 @@
-"""文件下载页：保存路径 + 扫描 + 勾选文件树 + 下载进度。"""
+"""文件下载页：扫描、勾选文件树和下载进度。保存选项由设置页管理。"""
 import html
 import os
+import re
 import threading
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QCheckBox, QTreeWidget, QTreeWidgetItem, QFileDialog,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QCheckBox, QTreeWidget, QTreeWidgetItem,
     QProgressBar, QStackedWidget, QHeaderView,
 )
 
@@ -52,31 +53,6 @@ class DownloadPage(QWidget):
         active_layout = QVBoxLayout(active_page)
         active_layout.setContentsMargins(0, 0, 0, 0)
         active_layout.setSpacing(10)
-
-        # 保存路径：一行，标签在左
-        path_layout = QHBoxLayout()
-        path_layout.setContentsMargins(9, 0, 9, 0)
-        path_layout.setSpacing(8)
-        self.save_label = QLabel()
-        self.save_label.setObjectName("field_label")
-        path_layout.addWidget(self.save_label)
-
-        self.save_path_input = QLineEdit()
-        default_path = self.ctx.settings.get("save_path") or os.path.join(
-            os.path.expanduser("~"), "Downloads", "Blackboard_download")
-        self.save_path_input.setText(default_path)
-        self.save_path_input.setFixedHeight(32)
-        self.save_path_input.setPlaceholderText("")
-        self.save_path_input.editingFinished.connect(self._save_path_setting)
-        path_layout.addWidget(self.save_path_input, 1)
-
-        browse_btn = QPushButton()
-        self.browse_btn = browse_btn
-        browse_btn.setObjectName("secondary")
-        browse_btn.setFixedHeight(32)
-        browse_btn.clicked.connect(self._browse_path)
-        path_layout.addWidget(browse_btn)
-        active_layout.addLayout(path_layout)
 
         # 工具行：左边全选，右边扫描（次要）和下载（主要）
         action_layout = QHBoxLayout()
@@ -139,8 +115,6 @@ class DownloadPage(QWidget):
         self.retranslate()
 
     def retranslate(self):
-        self.save_label.setText(self.tr("save_group"))
-        self.browse_btn.setText(self.tr("browse"))
         self.scan_btn.setText(self.tr("refresh"))
         self.download_btn.setText(self.tr("download"))
         self.select_all_cb.setText(self.tr("select_all"))
@@ -150,16 +124,6 @@ class DownloadPage(QWidget):
             header.setText(0, self.tr("col_name"))
             header.setText(1, self.tr("col_type"))
             header.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
-
-    def _save_path_setting(self):
-        self.ctx.settings.set("save_path", self.save_path_input.text().strip())
-        self.ctx.settings.save()
-
-    def _browse_path(self):
-        path = QFileDialog.getExistingDirectory(self, self.tr("browse_title"))
-        if path:
-            self.save_path_input.setText(path)
-            self._save_path_setting()
 
     # ------------------------------------------------------------- 课程切换
     def on_course_changed(self, course_id, course_name):
@@ -180,7 +144,6 @@ class DownloadPage(QWidget):
         if not self.course_id:
             self.ctx.log(self.tr("select_course_first"))
             return
-        self._save_path_setting()
         self.ctx.signals.set_busy.emit(self.scan_btn, True)
         threading.Thread(target=self._scan_thread, daemon=True).start()
 
@@ -430,11 +393,13 @@ class DownloadPage(QWidget):
         if not files:
             self.ctx.log(self.tr("no_selection"))
             return
-        save_path = self.save_path_input.text().strip()
+        default_path = os.path.join(
+            os.path.expanduser("~"), "Downloads", "Blackboard_download"
+        )
+        save_path = (self.ctx.settings.get("save_path", default_path) or "").strip()
         if not save_path:
             self.ctx.log(self.tr("no_path"))
             return
-        self._save_path_setting()
         self._download_files = files
         self.download_progress.setRange(0, len(files))
         self.download_progress.setValue(0)
@@ -442,6 +407,14 @@ class DownloadPage(QWidget):
         self.download_progress.setVisible(True)
         self.ctx.signals.set_busy.emit(self.download_btn, True)
         course_name = self.ctx.current_course_name or ""
+        if not self.ctx.settings.get("save_term_prefix", False):
+            # 与课程选框一致，只移除开头的学期标记，保留名称中的其他年份。
+            short_name = re.sub(
+                r"^\s*\d{4}(?:年度)?\s*(?:前期|後期|后期)\s*",
+                "",
+                course_name,
+            ).strip()
+            course_name = short_name or course_name
         threading.Thread(
             target=self._download_thread,
             args=(files, save_path, course_name),
