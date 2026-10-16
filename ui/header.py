@@ -1,52 +1,39 @@
-"""顶部栏：账号状态下拉菜单 + 课程选择。"""
+"""顶部栏：账号状态、账号菜单、学期筛选与课程选择。"""
 
 import re
 
-from PySide6.QtCore import Qt, Signal, QRect
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget,
-    QBoxLayout,
-    QLayout,
-    QHBoxLayout,
     QLabel,
     QPushButton,
     QComboBox,
-    QSizePolicy,
-    QStyle,
-    QStyleOptionComboBox,
+    QHBoxLayout,
+    QVBoxLayout,
     QMenu,
+    QSizePolicy,
 )
 
 
 class ElidedLabel(QLabel):
-    """放不下时用省略号截断，完整内容显示在悬停提示中。"""
+    """空间不足时省略文字，悬停显示完整内容。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
+
         self._full_text = ""
+
         self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setMinimumWidth(0)
         self.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Ignored,
             QSizePolicy.Policy.Preferred,
         )
 
     def set_full_text(self, text):
-        self._full_text = text
-        self.setToolTip(text)
+        self._full_text = str(text or "")
+        self.setToolTip(self._full_text)
         self._refresh()
-        self.updateGeometry()
-
-    def sizeHint(self):
-        hint = super().sizeHint()
-        hint.setWidth(
-            self.fontMetrics().horizontalAdvance(self._full_text)
-        )
-        return hint
-
-    def minimumSizeHint(self):
-        hint = super().minimumSizeHint()
-        hint.setWidth(0)
-        return hint
 
     def full_text(self):
         return self._full_text
@@ -66,6 +53,11 @@ class ElidedLabel(QLabel):
 
 
 class Header(QWidget):
+    """主窗口顶部栏。
+
+    只负责界面展示与信号发送。
+    不直接登录、不操作会话、不保存密码。
+    """
 
     login_requested = Signal()
     switch_requested = Signal()
@@ -79,8 +71,10 @@ class Header(QWidget):
 
         self.ctx = ctx
         self.courses = {}
+
         self._logged_in = False
         self._login_busy = False
+        self._compact = False
 
         self._build_ui()
 
@@ -93,592 +87,241 @@ class Header(QWidget):
     def tr(self, key, *args):
         return self.ctx.tr(key, *args)
 
-    def _menu_text(self, zh, ja, en):
-        """根据当前语言返回账号菜单文字。"""
-        lang = str(
-            self.ctx.settings.get("lang", "zh")
-        ).lower()
-
-        if lang.startswith("ja"):
-            return ja
-
-        if lang.startswith("en"):
-            return en
-
-        return zh
+    # ---------------------------------------------------------
+    # UI
+    # ---------------------------------------------------------
 
     def _build_ui(self):
-
-        root = QBoxLayout(
-            QBoxLayout.Direction.TopToBottom,
-            self,
-        )
-
-        root.setContentsMargins(0, 0, 9, 0)
-        root.setSpacing(8)
-
-        root.setSizeConstraint(
-            QLayout.SizeConstraint.SetNoConstraint
-        )
-
-        self._root_layout = root
-        self._compact = True
-        self._updating_layout = False
+        self.setMinimumWidth(0)
 
         self.setSizePolicy(
             QSizePolicy.Policy.Ignored,
             QSizePolicy.Policy.Fixed,
         )
 
-        # ==================================================
-        # 账号状态区域
-        # ==================================================
+        self.root = QVBoxLayout(self)
+        self.root.setContentsMargins(0, 0, 0, 0)
+        self.root.setSpacing(8)
+
+        # 第一行
+        self.top_row = QHBoxLayout()
+        self.top_row.setContentsMargins(0, 0, 0, 0)
+        self.top_row.setSpacing(8)
 
         self.account_widget = QWidget()
+        self.account_widget.setMinimumWidth(0)
 
-        account_layout = QHBoxLayout(
+        self.account_layout = QHBoxLayout(
             self.account_widget
         )
-
-        account_layout.setContentsMargins(
-            9, 0, 0, 0
+        self.account_layout.setContentsMargins(
+            0, 0, 0, 0
         )
+        self.account_layout.setSpacing(8)
 
-        account_layout.setSpacing(8)
-
-        # 账号状态按钮
+        # 登录状态按钮
         self.status_badge = QPushButton()
-
         self.status_badge.setObjectName(
-            "status_badge"
+            "login_status"
         )
-
-        self.status_badge.setFixedHeight(30)
-
+        self.status_badge.setFixedHeight(32)
         self.status_badge.setCursor(
             Qt.CursorShape.PointingHandCursor
         )
 
-        self.status_badge.clicked.connect(
-            self._show_account_menu
-        )
-
-        account_layout.addWidget(
+        self.account_layout.addWidget(
             self.status_badge
         )
 
-        # 姓名和学号
+        # 姓名 / 学籍番号
         self.account_label = ElidedLabel()
-
-        account_layout.addWidget(
-            self.account_label
+        self.account_label.setAlignment(
+            Qt.AlignmentFlag.AlignVCenter
+            | Qt.AlignmentFlag.AlignLeft
         )
 
-        account_layout.addStretch(1)
+        self.account_layout.addWidget(
+            self.account_label,
+            1,
+        )
 
-        root.addWidget(
+        self.top_row.addWidget(
             self.account_widget,
             1,
         )
 
-        # ==================================================
-        # 课程选择区域
-        # ==================================================
+        # 学期和课程选择容器
+        self.selector_widget = QWidget()
+        self.selector_widget.setMinimumWidth(0)
+
+        self.selector_layout = QHBoxLayout(
+            self.selector_widget
+        )
+        self.selector_layout.setContentsMargins(
+            0, 0, 0, 0
+        )
+        self.selector_layout.setSpacing(8)
 
         self.prefix_label = QLabel()
-        self.prefix_label.setObjectName(
-            "field_label"
-        )
+        self.course_label = QLabel()
 
         self.prefix_cb = QComboBox()
         self.prefix_cb.setFixedHeight(32)
-
-        self.prefix_cb.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy
-            .AdjustToMinimumContentsLengthWithIcon
-        )
-
-        self.prefix_cb.setMinimumContentsLength(6)
-
-        self.prefix_cb.currentIndexChanged.connect(
-            self._on_prefix_changed
-        )
-
-        self.course_label = QLabel()
-        self.course_label.setObjectName(
-            "field_label"
-        )
+        self.prefix_cb.setMinimumWidth(105)
+        self.prefix_cb.setMaximumWidth(180)
 
         self.course_cb = QComboBox()
         self.course_cb.setFixedHeight(32)
-
-        self.course_cb.setSizeAdjustPolicy(
-            QComboBox.SizeAdjustPolicy
-            .AdjustToMinimumContentsLengthWithIcon
+        self.course_cb.setMinimumWidth(130)
+        self.course_cb.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
         )
 
-        self.course_cb.setMinimumContentsLength(10)
-
-        self.course_cb.currentIndexChanged.connect(
-            self._on_course_index_changed
+        self.selector_layout.addWidget(
+            self.prefix_label
+        )
+        self.selector_layout.addWidget(
+            self.prefix_cb
+        )
+        self.selector_layout.addWidget(
+            self.course_label
+        )
+        self.selector_layout.addWidget(
+            self.course_cb,
+            1,
         )
 
-        # 课程选择布局
-        self._course_controls = QWidget()
-
-        course_layout = QHBoxLayout(
-            self._course_controls
+        self.top_row.addWidget(
+            self.selector_widget,
+            2,
         )
 
-        course_layout.setContentsMargins(
+        self.root.addLayout(self.top_row)
+
+        # 第二行：窄窗口时使用
+        self.compact_row = QHBoxLayout()
+        self.compact_row.setContentsMargins(
             0, 0, 0, 0
         )
+        self.compact_row.setSpacing(0)
 
-        course_layout.setSpacing(16)
+        self.root.addLayout(self.compact_row)
 
-        for index, (label, combo) in enumerate((
-            (self.prefix_label, self.prefix_cb),
-            (self.course_label, self.course_cb),
-        )):
+        # 账号菜单
+        self.account_menu = QMenu(self)
 
-            label.setSizePolicy(
-                QSizePolicy.Policy.Fixed,
-                QSizePolicy.Policy.Preferred,
-            )
-
-            pair = QWidget()
-
-            pair_layout = QHBoxLayout(pair)
-
-            pair_layout.setContentsMargins(
-                0, 0, 0, 0
-            )
-
-            pair_layout.setSpacing(6)
-
-            pair_layout.addWidget(label)
-            pair_layout.addWidget(combo, 1)
-
-            course_layout.addWidget(
-                pair,
-                index,
-            )
-
-            if index == 0:
-                self._term_pair = pair
-            else:
-                self._course_pair = pair
-
-        root.addWidget(
-            self._course_controls,
-            0,
-            Qt.AlignmentFlag.AlignRight,
+        self.login_action = (
+            self.account_menu.addAction("")
+        )
+        self.switch_action = (
+            self.account_menu.addAction("")
+        )
+        self.logout_action = (
+            self.account_menu.addAction("")
         )
 
-    # ==================================================
-    # 账号菜单
-    # ==================================================
-
-    def _show_account_menu(self):
-
-        if self._login_busy:
-            return
-
-        menu = QMenu(self)
-
-        if self._logged_in:
-
-            switch_action = menu.addAction(
-                self._menu_text(
-                    "切换账号",
-                    "アカウントを切り替える",
-                    "Switch account",
-                )
-            )
-
-            logout_action = menu.addAction(
-                self._menu_text(
-                    "退出登录",
-                    "ログアウト",
-                    "Log out",
-                )
-            )
-
-        else:
-
-            login_action = menu.addAction(
-                self._menu_text(
-                    "登录账号",
-                    "ログイン",
-                    "Log in",
-                )
-            )
-
-        position = self.status_badge.mapToGlobal(
-            self.status_badge.rect().bottomLeft()
+        self.status_badge.setMenu(
+            self.account_menu
         )
 
-        selected = menu.exec(position)
-
-        if selected is None:
-            return
-
-        if self._logged_in:
-
-            if selected == switch_action:
-                self.switch_requested.emit()
-
-            elif selected == logout_action:
-                self.logout_requested.emit()
-
-        else:
-
-            if selected == login_action:
-                self.login_requested.emit()
-
-    # ==================================================
-    # 账号状态
-    # ==================================================
-
-    def _update_badge_text(self):
-
-        key = (
-            "logged_in"
-            if self._logged_in
-            else "logged_out"
+        # 信号
+        self.login_action.triggered.connect(
+            self.login_requested.emit
         )
 
-        text = "●  " + self.tr(key) + "  ▾"
-
-        self.status_badge.setText(text)
-
-        state = (
-            "on"
-            if self._logged_in
-            else "off"
+        self.switch_action.triggered.connect(
+            self.switch_requested.emit
         )
 
-        self.status_badge.setProperty(
-            "state",
-            state,
+        self.logout_action.triggered.connect(
+            self.logout_requested.emit
         )
 
-        # 使用原主题中的状态样式
-        self.status_badge.style().unpolish(
-            self.status_badge
+        self.prefix_cb.currentIndexChanged.connect(
+            self._rebuild_course_options
         )
 
-        self.status_badge.style().polish(
-            self.status_badge
+        self.course_cb.currentIndexChanged.connect(
+            self._on_course_changed
         )
 
-        # 兼容原主题只针对 QLabel 定义颜色的情况。
-        # 保留按钮本身的主题背景、边框等样式。
-        color = (
-            "#238b53"
-            if self._logged_in
-            else "#d84a4a"
-        )
+        self._update_badge()
+        self._update_menu()
 
-        self.status_badge.setStyleSheet(
-            f"color: {color};"
-            "background: transparent;"
-            "border: none;"
-            "padding: 0 4px;"
-            "text-align: left;"
-        )
-
-        self._update_responsive_layout()
+    # ---------------------------------------------------------
+    # 登录状态
+    # ---------------------------------------------------------
 
     def set_login_status(self, ok):
-
         self._logged_in = bool(ok)
 
         if not ok:
             self.account_label.set_full_text("")
 
-        self._update_badge_text()
+        self._update_badge()
+        self._update_menu()
+
+    def set_login_busy(self, busy):
+        self._login_busy = bool(busy)
+
+        self.status_badge.setEnabled(
+            not self._login_busy
+        )
 
     def set_account(self, name, login_id):
-        """显示姓名和学籍番号。"""
-
         parts = [
-            p.strip()
-            for p in (name, login_id)
-            if p and p.strip()
+            str(part).strip()
+            for part in (name, login_id)
+            if part and str(part).strip()
         ]
 
         self.account_label.set_full_text(
             " · ".join(parts)
         )
 
-        self._update_responsive_layout()
-
-    def set_login_busy(self, busy):
-
-        self._login_busy = bool(busy)
-
-        self.status_badge.setEnabled(
-            not busy
+    def _update_badge(self):
+        key = (
+            "logged_in"
+            if self._logged_in
+            else "logged_out"
         )
 
-    def reset(self):
-        """清空账号显示和课程列表。"""
-
-        self.set_login_status(False)
-
-        self.account_label.set_full_text("")
-
-        self.courses = {}
-
-        self.prefix_cb.blockSignals(True)
-        self.prefix_cb.clear()
-        self.prefix_cb.blockSignals(False)
-
-        self.course_cb.blockSignals(True)
-        self.course_cb.clear()
-        self.course_cb.blockSignals(False)
-
-        self._update_responsive_layout()
-
-    # ==================================================
-    # 课程选择器宽度
-    # ==================================================
-
-    @staticmethod
-    def _combo_text_width(combo, sample):
-
-        combo.ensurePolished()
-
-        option = QStyleOptionComboBox()
-        option.initFrom(combo)
-
-        option.editable = combo.isEditable()
-        option.frame = True
-
-        option.rect = QRect(
-            0,
-            0,
-            1000,
-            combo.height(),
+        self.status_badge.setText(
+            "●  " + self.tr(key) + "  ▾"
         )
 
-        text_rect = combo.style().subControlRect(
-            QStyle.ComplexControl.CC_ComboBox,
-            option,
-            QStyle.SubControl.SC_ComboBoxEditField,
-            combo,
+        self.status_badge.setProperty(
+            "state",
+            "on" if self._logged_in else "off",
         )
 
-        decoration_width = (
-            option.rect.width()
-            - text_rect.width()
+        self.status_badge.style().unpolish(
+            self.status_badge
+        )
+        self.status_badge.style().polish(
+            self.status_badge
         )
 
-        return (
-            combo.fontMetrics().horizontalAdvance(
-                sample
-            )
-            + decoration_width
+    def _update_menu(self):
+        self.login_action.setVisible(
+            not self._logged_in
         )
 
-    def _update_selector_widths(self):
-
-        term_width = self._combo_text_width(
-            self.prefix_cb,
-            "2026後期",
+        self.switch_action.setVisible(
+            self._logged_in
         )
 
-        course_width = self._combo_text_width(
-            self.course_cb,
-            "漢" * 10,
+        self.logout_action.setVisible(
+            self._logged_in
         )
 
-        self.prefix_cb.setFixedWidth(
-            term_width
-        )
-
-        self.prefix_label.ensurePolished()
-        self.course_label.ensurePolished()
-
-        term_pair_width = (
-            self.prefix_label.sizeHint().width()
-            + 6
-            + term_width
-        )
-
-        course_label_width = (
-            self.course_label.sizeHint().width()
-            + 6
-        )
-
-        self._term_pair.setFixedWidth(
-            term_pair_width
-        )
-
-        self.course_cb.setFixedWidth(
-            course_width
-        )
-
-        self._course_pair.setFixedWidth(
-            course_label_width
-            + course_width
-        )
-
-        self._course_controls.setFixedWidth(
-            term_pair_width
-            + 16
-            + course_label_width
-            + course_width
-        )
-
-        self._course_controls.setSizePolicy(
-            QSizePolicy.Policy.Fixed,
-            QSizePolicy.Policy.Fixed,
-        )
-
-        self._root_layout.setStretch(0, 1)
-        self._root_layout.setStretch(1, 0)
-
-        self._root_layout.setAlignment(
-            self._course_controls,
-            Qt.AlignmentFlag.AlignRight
-            | Qt.AlignmentFlag.AlignVCenter,
-        )
-
-        self._update_responsive_layout()
-
-    # ==================================================
-    # 响应式布局
-    # ==================================================
-
-    def _update_responsive_layout(self):
-
-        if self._updating_layout:
-            return
-
-        self._updating_layout = True
-
-        try:
-
-            account_layout = (
-                self.account_widget.layout()
-            )
-
-            account_layout.invalidate()
-
-            account_width = (
-                account_layout.sizeHint().width()
-            )
-
-            gap = (
-                self.prefix_label
-                .fontMetrics()
-                .horizontalAdvance("　　")
-            )
-
-            margins = (
-                self._root_layout.contentsMargins()
-            )
-
-            available_width = (
-                self.width()
-                - margins.left()
-                - margins.right()
-            )
-
-            required_width = (
-                account_width
-                + gap
-                + self._course_controls.minimumWidth()
-            )
-
-            compact = (
-                available_width < required_width
-            )
-
-            changed = (
-                compact != self._compact
-            )
-
-            if changed:
-
-                self._compact = compact
-
-                self._root_layout.setDirection(
-                    QBoxLayout.Direction.TopToBottom
-                    if compact
-                    else QBoxLayout.Direction.LeftToRight
-                )
-
-            self._root_layout.setSpacing(
-                8 if compact else gap
-            )
-
-            if changed:
-                self.updateGeometry()
-
-        finally:
-            self._updating_layout = False
-
-    def resizeEvent(self, event):
-
-        super().resizeEvent(event)
-
-        self._update_responsive_layout()
-
-    # ==================================================
-    # 多语言
-    # ==================================================
-
-    def retranslate(self):
-
-        self.course_label.setText(
-            self.tr("course_name")
-        )
-
-        self.prefix_label.setText(
-            self.tr("prefix_filter")
-        )
-
-        if self.prefix_cb.count():
-
-            self.prefix_cb.setItemText(
-                0,
-                self.tr("all_terms"),
-            )
-
-            for index in range(
-                1,
-                self.prefix_cb.count(),
-            ):
-
-                if (
-                    self.prefix_cb.itemData(index)
-                    == "__other__"
-                ):
-
-                    self.prefix_cb.setItemText(
-                        index,
-                        self.tr("other_term"),
-                    )
-
-        if self.course_cb.count():
-
-            self.course_cb.setItemText(
-                0,
-                self.tr("placeholder_course"),
-            )
-
-        self._update_badge_text()
-
-        self._update_selector_widths()
-
-    # ==================================================
-    # 课程相关逻辑
-    # ==================================================
+    # ---------------------------------------------------------
+    # 课程
+    # ---------------------------------------------------------
 
     def set_courses(self, courses):
+        """可从后台线程调用，通过信号更新界面。"""
 
         self.courses_loaded.emit(
             courses or {}
@@ -686,24 +329,22 @@ class Header(QWidget):
 
     @staticmethod
     def _term_prefix(course_name):
-
         match = re.match(
             r"^\s*(\d{4}(?:年度)?\s*(?:前期|後期|后期))",
-            course_name,
+            str(course_name),
         )
 
-        return (
-            re.sub(r"\s+", "", match.group(1))
-            if match
-            else None
+        if not match:
+            return None
+
+        return re.sub(
+            r"\s+",
+            "",
+            match.group(1),
         )
 
     @classmethod
-    def _display_course_name(
-        cls,
-        course_name,
-    ):
-
+    def _display_course_name(cls, course_name):
         if cls._term_prefix(course_name) is None:
             return course_name
 
@@ -714,10 +355,9 @@ class Header(QWidget):
         ).strip()
 
     def _populate_courses(self, courses):
+        self.courses = dict(courses or {})
 
-        self.courses = courses
-
-        names = list(courses.keys())
+        names = list(self.courses)
 
         terms = {
             term
@@ -747,7 +387,6 @@ class Header(QWidget):
         )
 
         self.prefix_cb.blockSignals(True)
-
         self.prefix_cb.clear()
 
         self.prefix_cb.addItem(
@@ -756,7 +395,6 @@ class Header(QWidget):
         )
 
         for term in terms:
-
             self.prefix_cb.addItem(
                 term,
                 term,
@@ -766,12 +404,12 @@ class Header(QWidget):
             self._term_prefix(name) is None
             for name in names
         ):
-
             self.prefix_cb.addItem(
                 self.tr("other_term"),
                 "__other__",
             )
 
+        # 默认显示最近学期
         self.prefix_cb.setCurrentIndex(
             1 if terms else 0
         )
@@ -780,15 +418,13 @@ class Header(QWidget):
 
         self._rebuild_course_options()
 
-    def _rebuild_course_options(self):
-
+    def _rebuild_course_options(self, *_):
         term = (
             self.prefix_cb.currentData()
             or ""
         )
 
         if term == "__other__":
-
             names = [
                 name
                 for name in self.courses
@@ -796,7 +432,6 @@ class Header(QWidget):
             ]
 
         elif term:
-
             names = [
                 name
                 for name in self.courses
@@ -804,81 +439,178 @@ class Header(QWidget):
             ]
 
         else:
-
             names = list(self.courses)
 
         old_name = (
             self.course_cb.currentData()
             if self.course_cb.currentIndex() > 0
-            else ""
+            else None
         )
 
         self.course_cb.blockSignals(True)
-
         self.course_cb.clear()
 
         self.course_cb.addItem(
-            self.tr("placeholder_course")
+            self.tr("placeholder_course"),
+            None,
         )
 
         for name in names:
-
             self.course_cb.addItem(
                 self._display_course_name(name),
                 name,
             )
 
         if old_name in names:
-
             self.course_cb.setCurrentIndex(
                 names.index(old_name) + 1
             )
-
         else:
-
             self.course_cb.setCurrentIndex(0)
 
         self.course_cb.blockSignals(False)
 
-        if (
-            old_name
-            and old_name not in names
-        ):
+        self._on_course_changed()
 
-            self.course_selected.emit(
-                "",
-                "",
-            )
+    def _on_course_changed(self, *_):
+        name = self.course_cb.currentData()
 
-    def _on_prefix_changed(
-        self,
-        _index,
-    ):
-
-        self._rebuild_course_options()
-
-    def _on_course_index_changed(self):
-
-        idx = (
-            self.course_cb.currentIndex()
-        )
-
-        if idx <= 0:
-
-            self.course_selected.emit(
-                "",
-                "",
-            )
-
+        if not name or name not in self.courses:
+            self.course_selected.emit("", "")
             return
 
-        name = (
-            self.course_cb.currentData()
+        course = self.courses[name]
+
+        if isinstance(course, dict):
+            course_id = course.get("id", "")
+        else:
+            course_id = course
+
+        self.course_selected.emit(
+            str(course_id),
+            str(name),
         )
 
-        if name in self.courses:
+    # ---------------------------------------------------------
+    # 重置
+    # ---------------------------------------------------------
 
-            self.course_selected.emit(
-                self.courses[name]["id"],
-                name,
+    def reset(self):
+        self.courses = {}
+
+        self.set_login_status(False)
+        self.set_account("", "")
+
+        self.prefix_cb.blockSignals(True)
+        self.course_cb.blockSignals(True)
+
+        self.prefix_cb.clear()
+        self.course_cb.clear()
+
+        self.prefix_cb.blockSignals(False)
+        self.course_cb.blockSignals(False)
+
+        self.prefix_cb.addItem(
+            self.tr("all_terms"),
+            "",
+        )
+
+        self.course_cb.addItem(
+            self.tr("placeholder_course"),
+            None,
+        )
+
+        self.course_selected.emit("", "")
+
+    # ---------------------------------------------------------
+    # 国际化
+    # ---------------------------------------------------------
+
+    def retranslate(self):
+        tr = self.ctx.tr
+
+        self.login_action.setText(
+            tr("login_account")
+        )
+
+        self.switch_action.setText(
+            tr("switch_account")
+        )
+
+        self.logout_action.setText(
+            tr("logout")
+        )
+
+        self.prefix_label.setText(
+            tr("prefix_filter")
+        )
+
+        self.course_label.setText(
+            tr("course_name")
+        )
+
+        for index in range(
+            self.prefix_cb.count()
+        ):
+            data = self.prefix_cb.itemData(index)
+
+            if data == "":
+                self.prefix_cb.setItemText(
+                    index,
+                    tr("all_terms"),
+                )
+
+            elif data == "__other__":
+                self.prefix_cb.setItemText(
+                    index,
+                    tr("other_term"),
+                )
+
+        if self.course_cb.count():
+            self.course_cb.setItemText(
+                0,
+                tr("placeholder_course"),
             )
+
+        self._update_badge()
+        self._update_menu()
+
+    # ---------------------------------------------------------
+    # 响应式布局
+    # ---------------------------------------------------------
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        """窗口较窄时将课程选择移动到第二行。"""
+
+        compact = self.width() < 650
+
+        if compact == self._compact:
+            return
+
+        self._compact = compact
+
+        if compact:
+            self.top_row.removeWidget(
+                self.selector_widget
+            )
+
+            self.compact_row.addWidget(
+                self.selector_widget
+            )
+
+        else:
+            self.compact_row.removeWidget(
+                self.selector_widget
+            )
+
+            self.top_row.addWidget(
+                self.selector_widget,
+                2,
+            )
+
+        self.updateGeometry()
