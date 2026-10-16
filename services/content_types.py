@@ -19,6 +19,7 @@ def is_assessment_content(item):
     """Recognize native assessments and explicit links to course assessments."""
     for resource_type in (
         "resource/x-bb-asmt-test-link",
+        "resource/x-bb-asmt-survey-link",
         "resource/x-bb-assignment",
     ):
         if has_content_type(item, resource_type):
