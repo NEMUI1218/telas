@@ -22,6 +22,7 @@ class Sidebar(QWidget):
         self.title_label = QLabel()
         self.title_label.setObjectName("app_title")
         self.title_label.setWordWrap(True)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.title_label)
 
         self.btn_download = QPushButton()
