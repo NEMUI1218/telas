@@ -13,7 +13,14 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import quote, urlparse
 
-from services.content_types import get_content_url, has_content_type, is_content_folder
+from services.content_types import (
+    content_type_diagnostic,
+    get_content_url,
+    has_content_type,
+    is_assessment_content,
+    is_content_folder,
+    is_content_page,
+)
 from utils.paths import data_path
 
 
@@ -402,14 +409,27 @@ class BlackboardAPI:
                 if not isinstance(item, dict):
                     continue
 
+                is_assessment = is_assessment_content(item)
+                if is_assessment:
+                    route = "assessment"
+                elif is_content_folder(item):
+                    route = "folder"
+                elif is_content_page(item):
+                    route = "page"
+                else:
+                    route = "ignored"
+                self.log(content_type_diagnostic(
+                    item, course_id, content_id, "quiz", route
+                ))
+
                 item_id = item.get("id")
 
                 if not item_id:
                     continue
 
                 item_id = str(item_id)
-                # 识别 Blackboard 测验链接。
-                if has_content_type(item, "resource/x-bb-asmt-test-link"):
+                # 测验、作业和指向评估的课程链接共用类型判定。
+                if is_assessment:
                     if item_id not in quiz_ids:
                         quiz_ids.add(item_id)
 
@@ -428,6 +448,8 @@ class BlackboardAPI:
                         })
 
                         self.log(f"[测验识别] 找到测验：{title}")
+                    # 已确认的作业是最终条目，不再作为目录继续展开。
+                    continue
 
                 # 保留页面内部的遍历，但只有真实目录才增加课时层级。
                 if has_content_type(item, "resource/x-bb-folder"):
