@@ -3,7 +3,7 @@ import re
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QStackedWidget,
+    QWidget, QBoxLayout, QLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QStackedWidget,
     QSizePolicy,
 )
 
@@ -57,9 +57,13 @@ class Header(QWidget):
         return self.ctx.tr(key, *args)
 
     def _build_ui(self):
-        root = QHBoxLayout(self)
+        root = QBoxLayout(QBoxLayout.Direction.TopToBottom, self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        root.setSpacing(8)
+        root.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
+        self._root_layout = root
+        self._compact = True
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
 
         self.stack = QStackedWidget()
         self.stack.setFixedHeight(32)
@@ -76,7 +80,9 @@ class Header(QWidget):
         # 用户名和密码不单独放标签，用输入框里的占位文字和悬停提示代替：
         # 日文、英文的标签较长，带标签时登录栏在最小窗口宽度下放不下。
         self.user_input = QLineEdit()
-        self.user_input.setFixedWidth(150)
+        self.user_input.setMinimumWidth(100)
+        self.user_input.setMaximumWidth(150)
+        self.user_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.user_input.setFixedHeight(32)
         if self.ctx.settings.get("user"):
             self.user_input.setText(self.ctx.settings.get("user"))
@@ -84,7 +90,9 @@ class Header(QWidget):
 
         self.pwd_input = QLineEdit()
         self.pwd_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.pwd_input.setFixedWidth(150)
+        self.pwd_input.setMinimumWidth(100)
+        self.pwd_input.setMaximumWidth(150)
+        self.pwd_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.pwd_input.setFixedHeight(32)
         if self.ctx.settings.get("pwd"):
             self.pwd_input.setText(self.ctx.settings.get("pwd"))
@@ -125,6 +133,10 @@ class Header(QWidget):
         self.prefix_cb.setFixedHeight(32)
         self.prefix_cb.setMinimumWidth(110)
         self.prefix_cb.setMaximumWidth(160)
+        self.prefix_cb.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.prefix_cb.setMinimumContentsLength(1)
         self.prefix_cb.currentIndexChanged.connect(self._on_prefix_changed)
 
         self.course_label = QLabel()
@@ -133,21 +145,41 @@ class Header(QWidget):
         self.course_cb.setFixedHeight(32)
         self.course_cb.setMinimumWidth(160)
         self.course_cb.setMaximumWidth(400)
+        self.course_cb.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.course_cb.setMinimumContentsLength(1)
         self.course_cb.currentIndexChanged.connect(self._on_course_index_changed)
 
         self.stack.addWidget(login_page)        # page 0
         self.stack.addWidget(logged_in_page)    # page 1
         self.stack.setCurrentIndex(0)
 
-        # 课程选择始终可见，追加到 stack 右侧
-        root.addSpacing(16)
-        root.addWidget(self.prefix_label)
-        root.addSpacing(6)
-        root.addWidget(self.prefix_cb, 1)
-        root.addSpacing(10)
-        root.addWidget(self.course_label)
-        root.addSpacing(8)
-        root.addWidget(self.course_cb, 2)
+        # 窄窗口下把课程选择放到第二行，宽窗口下仍与账号信息并排。
+        course_controls = QWidget()
+        course_layout = QHBoxLayout(course_controls)
+        course_layout.setContentsMargins(0, 0, 0, 0)
+        course_layout.setSpacing(0)
+        course_layout.addWidget(self.prefix_label)
+        course_layout.addSpacing(6)
+        course_layout.addWidget(self.prefix_cb, 1)
+        course_layout.addSpacing(10)
+        course_layout.addWidget(self.course_label)
+        course_layout.addSpacing(8)
+        course_layout.addWidget(self.course_cb, 2)
+        root.addWidget(course_controls, 3)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        compact = self.width() < 850
+        if compact != self._compact:
+            self._compact = compact
+            self._root_layout.setDirection(
+                QBoxLayout.Direction.TopToBottom
+                if compact else QBoxLayout.Direction.LeftToRight
+            )
+            self._root_layout.setSpacing(8 if compact else 16)
+            self.updateGeometry()
 
     def retranslate(self):
         # 文案键带着结尾的冒号（"用户名:"），做占位文字时去掉
