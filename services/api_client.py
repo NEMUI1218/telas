@@ -7,6 +7,7 @@ bb_config.json / bb_session.json 都在每个用户自己的数据目录里，
 """
 
 import json
+import math
 import os
 import requests
 
@@ -545,7 +546,7 @@ class BlackboardAPI:
                 continue
 
             score_info = column.get("score") or {}
-            quiz["points_possible"] = score_info.get("possible")
+            quiz["points_possible"] = self._grade_number(score_info.get("possible"))
             grading = column.get("grading") or {}
             quiz["attempts_allowed"] = grading.get("attemptsAllowed")
             quiz["attempts_allowed_known"] = (
@@ -556,15 +557,34 @@ class BlackboardAPI:
             if not column_id:
                 continue
 
+            column_url = f"{columns_url}/{quote(str(column_id), safe='')}"
+            availability = column.get("availability") or {}
+            hidden = availability.get("available") == "No"
+            final_grade_known = False
+            if hidden:
+                quiz["points_display"] = "none"
+            else:
+                # 学生可见的最终成绩包含人工覆盖评分；答题记录可能仍待评分。
+                grade = self.api(f"{column_url}/users/{encoded_user_id}")
+                final_grade_known = (
+                    isinstance(grade, dict)
+                    and grade.get("userId") in (None, str(user_id))
+                    and grade.get("columnId") in (None, str(column_id))
+                )
+                if final_grade_known:
+                    if grade.get("exempt") is True:
+                        quiz["points_display"] = "none"
+                    else:
+                        # GradeV2.status 已废弃，不用它否定已返回的展示成绩。
+                        self._apply_display_grade(quiz, grade.get("displayGrade"))
+
             attempts_url = (
-                f"{BASE_URL}/learn/api/public/v2/courses/"
-                f"{encoded_course_id}/gradebook/columns/"
-                f"{quote(str(column_id), safe='')}/attempts"
+                f"{column_url}/attempts"
                 f"?userId={encoded_user_id}"
             )
             attempts_data = self.api(attempts_url)
             attempts = (
-                attempts_data.get("results", [])
+                attempts_data.get("results")
                 if isinstance(attempts_data, dict)
                 else None
             )
@@ -589,16 +609,28 @@ class BlackboardAPI:
             quiz["attempts_known"] = True
             quiz["attempt_count"] = len(attempts)
 
+            # 成功读取的最终成绩即为准；空成绩保持未知，不拿内部零分补齐。
+            if final_grade_known or quiz.get("points_display") == "none":
+                continue
+
             scored = []
             for attempt in attempts:
-                display_grade = attempt.get("displayGrade") or {}
-                value = display_grade.get("score")
-                if value is None:
-                    value = attempt.get("score")
-                if isinstance(value, (int, float)):
-                    scored.append(value)
+                if (
+                    attempt.get("status") != "Completed"
+                    or attempt.get("readyToPost") is True
+                    or attempt.get("exempt") is True
+                ):
+                    continue
+                candidate = {"points_possible": quiz.get("points_possible")}
+                self._apply_display_grade(candidate, attempt.get("displayGrade"))
+                if candidate.get("points_display") == "none":
+                    quiz["points_display"] = "none"
+                    break
+                if candidate.get("points_earned") is not None:
+                    scored.append(candidate["points_earned"])
+                    quiz["points_possible"] = candidate.get("points_possible")
 
-            if scored:
+            if scored and quiz.get("points_display") != "none":
                 scoring_model = grading.get("scoringModel", "Last")
                 if scoring_model == "First":
                     earned = scored[0]
@@ -611,6 +643,46 @@ class BlackboardAPI:
                 else:
                     earned = scored[-1]
                 quiz["points_earned"] = earned
+
+    @staticmethod
+    def _grade_number(value):
+        """读取有限数值，保留真实零分，排除布尔值及空值。"""
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            return None
+        try:
+            number = float(value)
+        except (ValueError, OverflowError):
+            return None
+        return number if math.isfinite(number) else None
+
+    @classmethod
+    def _apply_display_grade(cls, quiz, display_grade):
+        """按评分方式读取展示成绩，不把完成标记当作数值分数。"""
+        if not isinstance(display_grade, dict):
+            return
+        scale = display_grade.get("scaleType")
+        if scale in ("CompleteIncomplete", "Text", "Tabular"):
+            quiz["points_display"] = "none"
+            quiz.pop("points_earned", None)
+            return
+        if scale not in ("Score", "Percent"):
+            return
+
+        quiz["points_display"] = "numeric"
+        quiz.pop("points_earned", None)
+        possible = cls._grade_number(display_grade.get("possible"))
+        if possible is not None and possible >= 0:
+            quiz["points_possible"] = possible
+        earned = cls._grade_number(display_grade.get("score"))
+        if earned is None:
+            return
+        if scale == "Percent":
+            possible = cls._grade_number(quiz.get("points_possible"))
+            if possible is None or possible < 0:
+                return
+            earned = cls._grade_number(earned * possible / 100)
+        if earned is not None:
+            quiz["points_earned"] = earned
 
     # ------------------------------------------------------------------ 下载
     def download_file(self, url, path):
