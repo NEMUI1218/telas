@@ -12,6 +12,7 @@ import os
 import requests
 
 from bs4 import BeautifulSoup
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlparse
 
 from services.content_types import (
@@ -446,6 +447,9 @@ class BlackboardAPI:
                             "url": get_content_url(
                                 item, BASE_URL, course_id, content_id
                             ),
+                            "due_date": self._format_due_date_jst(
+                                self._get_content_due_date(item)
+                            ),
                         }
                         self._apply_assessment_grade_settings(quiz, item)
                         quizzes.append(quiz)
@@ -507,6 +511,43 @@ class BlackboardAPI:
         if include_folders:
             return {"quizzes": quizzes, "folders": folders}
         return quizzes
+
+    @staticmethod
+    def _get_content_due_date(item):
+        """Return the content due date, preferring genericReadOnlyData."""
+        generic_data = item.get("genericReadOnlyData")
+        if isinstance(generic_data, dict) and generic_data.get("dueDate"):
+            return generic_data["dueDate"]
+        return item.get("dueDate")
+
+    @staticmethod
+    def _format_due_date_jst(value):
+        """Format a Blackboard due date in Japan Standard Time."""
+        if value in (None, ""):
+            return None
+
+        try:
+            if isinstance(value, (int, float)):
+                timestamp = float(value)
+                if abs(timestamp) >= 100_000_000_000:
+                    timestamp /= 1000
+                due_date = datetime.fromtimestamp(timestamp, timezone.utc)
+            else:
+                text = str(value).strip()
+                if not text:
+                    return None
+                if text.endswith(("Z", "z")):
+                    text = f"{text[:-1]}+00:00"
+                due_date = datetime.fromisoformat(text)
+                if due_date.tzinfo is None:
+                    due_date = due_date.replace(tzinfo=timezone.utc)
+        except (OverflowError, TypeError, ValueError):
+            return None
+
+        japan_time = due_date.astimezone(
+            timezone(timedelta(hours=9), name="JST")
+        )
+        return japan_time.strftime("%Y-%m-%d %H:%M")
 
     def _attach_quiz_gradebook_data(
         self, course_id, encoded_course_id, quizzes
