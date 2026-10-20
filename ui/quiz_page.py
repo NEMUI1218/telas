@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QComboBox,
     QCheckBox,
+    QDialog,
     QTreeWidget,
     QTreeWidgetItem,
     QHeaderView,
@@ -40,7 +41,9 @@ class QuizPage(QWidget):
         self._loaded_folders = []
         self._course_quizzes = []
         self._course_folders = []
+        self._management_quizzes = []
         self._management_mode = False
+        self._management_view = "unfinished"
         self._quiz_checkboxes = {}
         self._signals = _QuizLoadSignals(self)
         self._signals.finished.connect(self._on_quizzes_loaded)
@@ -64,42 +67,11 @@ class QuizPage(QWidget):
         )
         toolbar.addWidget(self.status_label, 1)
 
-        self.management_term_filter = QComboBox()
-        self.management_term_filter.setFixedWidth(130)
-        self.management_term_filter.setVisible(False)
-        self.management_term_filter.currentIndexChanged.connect(
-            self._refresh_term_quizzes
-        )
-        toolbar.addWidget(self.management_term_filter)
-
-        self.management_filter = QComboBox()
-        self.management_filter.setFixedWidth(120)
-        self.management_filter.currentIndexChanged.connect(
-            self._populate_quiz_tree
-        )
-        self.management_filter.setVisible(False)
-        toolbar.addWidget(self.management_filter)
-
-        self.batch_archive_btn = QPushButton()
-        self.batch_archive_btn.setObjectName("secondary")
-        self.batch_archive_btn.setFixedSize(110, 34)
-        self.batch_archive_btn.setEnabled(False)
-        self.batch_archive_btn.setVisible(False)
-        self.batch_archive_btn.clicked.connect(self._archive_checked)
-        toolbar.addWidget(self.batch_archive_btn)
-
         self.unfinished_btn = QPushButton()
         self.unfinished_btn.setObjectName("secondary")
         self.unfinished_btn.setFixedSize(120, 34)
         self.unfinished_btn.clicked.connect(self._open_management)
         toolbar.addWidget(self.unfinished_btn)
-
-        self.back_btn = QPushButton()
-        self.back_btn.setObjectName("secondary")
-        self.back_btn.setFixedSize(90, 34)
-        self.back_btn.setVisible(False)
-        self.back_btn.clicked.connect(self._close_management)
-        toolbar.addWidget(self.back_btn)
 
         self.refresh_btn = QPushButton()
         self.refresh_btn.setObjectName("secondary")
@@ -145,6 +117,8 @@ class QuizPage(QWidget):
         self.empty_label.setWordWrap(True)
         layout.addWidget(self.empty_label, 1)
 
+        self._build_management_dialog()
+
         self.ctx.signals.course_changed.connect(self.on_course_changed)
         self.ctx.signals.login_state.connect(self._on_login_state)
         self.ctx.signals.theme_changed.connect(self._refresh_name_links)
@@ -154,22 +128,11 @@ class QuizPage(QWidget):
     def retranslate(self):
         self.refresh_btn.setText(self.ctx.tr("refresh"))
         self.empty_label.setText(self.ctx.tr("empty_state"))
-        selected_filter = self.management_filter.currentData()
-        self.management_filter.blockSignals(True)
-        self.management_filter.clear()
-        self.management_filter.addItem(
-            self.ctx.tr("quiz_filter_unfinished"), "unfinished"
-        )
-        self.management_filter.addItem(
-            self.ctx.tr("quiz_filter_archived"), "archived"
-        )
-        selected_index = self.management_filter.findData(
-            selected_filter or "unfinished"
-        )
-        self.management_filter.setCurrentIndex(max(selected_index, 0))
-        self.management_filter.blockSignals(False)
         self.unfinished_btn.setText(self.ctx.tr("quiz_unfinished_tasks"))
-        self.back_btn.setText(self.ctx.tr("back"))
+        self.management_dialog.setWindowTitle(
+            self.ctx.tr("quiz_unfinished_tasks")
+        )
+        self.management_refresh_btn.setText(self.ctx.tr("refresh"))
         self.quiz_tree.setHeaderLabels([
             self.ctx.tr("quiz_col_name"),
             self.ctx.tr("quiz_col_due_date"),
@@ -182,7 +145,88 @@ class QuizPage(QWidget):
             header_item.setTextAlignment(
                 column, Qt.AlignmentFlag.AlignCenter
             )
-        self._update_batch_archive_button()
+        self.management_tree.setHeaderLabels([
+            self.ctx.tr("quiz_col_name"),
+            self.ctx.tr("quiz_col_due_date"),
+            self.ctx.tr("quiz_col_attempts"),
+            self.ctx.tr("quiz_col_points"),
+            self.ctx.tr("col_type"),
+        ])
+        management_header_item = self.management_tree.headerItem()
+        for column in (1, 2, 3, 4):
+            management_header_item.setTextAlignment(
+                column, Qt.AlignmentFlag.AlignCenter
+            )
+        self._update_management_view_text()
+
+    def _build_management_dialog(self):
+        self.management_dialog = QDialog(self)
+        self.management_dialog.setModal(True)
+        self.management_dialog.resize(980, 620)
+        self.management_dialog.finished.connect(
+            self._on_management_dialog_closed
+        )
+
+        dialog_layout = QVBoxLayout(self.management_dialog)
+        dialog_layout.setContentsMargins(12, 12, 12, 12)
+        dialog_layout.setSpacing(10)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+
+        self.management_title_label = QLabel()
+        title_font = self.management_title_label.font()
+        title_font.setPointSize(title_font.pointSize() + 3)
+        title_font.setBold(True)
+        self.management_title_label.setFont(title_font)
+        controls.addWidget(self.management_title_label)
+        controls.addSpacing(12)
+
+        self.management_term_filter = QComboBox()
+        self.management_term_filter.setFixedWidth(140)
+        self.management_term_filter.currentIndexChanged.connect(
+            self._refresh_term_quizzes
+        )
+        controls.addWidget(self.management_term_filter)
+
+        self.management_toggle_btn = QPushButton()
+        self.management_toggle_btn.setObjectName("secondary")
+        self.management_toggle_btn.clicked.connect(
+            self._toggle_management_view
+        )
+        controls.addWidget(self.management_toggle_btn)
+        controls.addStretch(1)
+
+        self.batch_archive_btn = QPushButton()
+        self.batch_archive_btn.setEnabled(False)
+        self.batch_archive_btn.clicked.connect(self._archive_checked)
+        controls.addWidget(self.batch_archive_btn)
+
+        self.management_refresh_btn = QPushButton()
+        self.management_refresh_btn.setObjectName("secondary")
+        self.management_refresh_btn.clicked.connect(
+            self._refresh_term_quizzes
+        )
+        controls.addWidget(self.management_refresh_btn)
+        dialog_layout.addLayout(controls)
+
+        self.management_status_label = QLabel()
+        self.management_status_label.setFixedHeight(24)
+        dialog_layout.addWidget(self.management_status_label)
+
+        self.management_tree = QTreeWidget()
+        self.management_tree.setColumnCount(5)
+        self.management_tree.setAlternatingRowColors(True)
+        self.management_tree.setIndentation(22)
+        management_header = self.management_tree.header()
+        management_header.setStretchLastSection(False)
+        management_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column, width in ((1, 145), (2, 110), (3, 90), (4, 90)):
+            management_header.setSectionResizeMode(
+                column, QHeaderView.ResizeMode.Fixed
+            )
+            management_header.resizeSection(column, width)
+        dialog_layout.addWidget(self.management_tree, 1)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -249,30 +293,36 @@ class QuizPage(QWidget):
             )
             return
 
-        self._loaded_quizzes = quizzes.get("quizzes", [])
-        self._loaded_folders = quizzes.get("folders", [])
-        self._course_quizzes = self._loaded_quizzes
-        self._course_folders = self._loaded_folders
-        self._populate_quiz_tree()
+        self._course_quizzes = quizzes.get("quizzes", [])
+        self._course_folders = quizzes.get("folders", [])
+        if not self._management_mode:
+            self._populate_quiz_tree()
         self.status_label.clear()
 
     def _populate_quiz_tree(self, *_args):
-        self.quiz_tree.clear()
+        tree = self.management_tree if self._management_mode else self.quiz_tree
+        tree.clear()
         self._quiz_checkboxes = {}
-        filter_name = self.management_filter.currentData() or "unfinished"
+        filter_name = self._management_view
+        source_quizzes = (
+            self._management_quizzes
+            if self._management_mode
+            else self._course_quizzes
+        )
+        source_folders = self._course_folders
         if not self._management_mode:
             quiz_list = [
-                quiz for quiz in self._loaded_quizzes
+                quiz for quiz in source_quizzes
                 if not self._is_quiz_archived(quiz)
             ]
         elif filter_name == "archived":
             quiz_list = [
-                quiz for quiz in self._loaded_quizzes
+                quiz for quiz in source_quizzes
                 if self._is_quiz_archived(quiz)
             ]
         else:
             quiz_list = [
-                quiz for quiz in self._loaded_quizzes
+                quiz for quiz in source_quizzes
                 if not self._is_quiz_archived(quiz)
                 and self._is_unfinished(quiz)
             ]
@@ -297,14 +347,14 @@ class QuizPage(QWidget):
                     Qt.ItemDataRole.UserRole,
                     {"path": [lesson_name]},
                 )
-                self.quiz_tree.addTopLevelItem(lesson_item)
+                tree.addTopLevelItem(lesson_item)
                 lessons[lesson_name] = lesson_item
             return lessons[lesson_name]
 
         # 只把课程目录下的第一层文件夹作为课时显示。
         # 更深层的“授業用資料について”等资料文件夹继续由文件下载页展示。
         if not self._management_mode:
-            for folder in self._loaded_folders:
+            for folder in source_folders:
                 path = folder.get("path", [])
                 if len(path) == 1:
                     ensure_lesson(path)
@@ -321,7 +371,7 @@ class QuizPage(QWidget):
             self._center_result_columns(quiz_item)
             quiz_item.setData(0, Qt.ItemDataRole.UserRole, quiz.get("id", ""))
             if parent is None:
-                self.quiz_tree.addTopLevelItem(quiz_item)
+                tree.addTopLevelItem(quiz_item)
             else:
                 parent.addChild(quiz_item)
             # QTreeWidget 只有在条目已加入树后才能设置单元格控件。
@@ -333,6 +383,7 @@ class QuizPage(QWidget):
                 quiz.get("url", ""),
                 checkable=self._management_mode,
                 course_id=quiz.get("course_id"),
+                tree=tree,
             )
 
         for lesson_name, lesson_item in lessons.items():
@@ -371,28 +422,43 @@ class QuizPage(QWidget):
         return str(quiz.get("id", "")) in self._archived_quiz_ids(course_id)
 
     def _open_management(self):
+        if self.management_dialog.isVisible():
+            self.management_dialog.raise_()
+            self.management_dialog.activateWindow()
+            return
         self._management_mode = True
-        self.unfinished_btn.setVisible(False)
-        self.refresh_btn.setVisible(False)
-        self.management_term_filter.setVisible(True)
-        self.management_filter.setVisible(True)
-        self.batch_archive_btn.setVisible(True)
-        self.back_btn.setVisible(True)
-        self.management_filter.setCurrentIndex(0)
+        self._management_view = "unfinished"
+        self._update_management_view_text()
         self._populate_term_options()
+        self.management_dialog.open()
 
-    def _close_management(self):
+    def _on_management_dialog_closed(self, _result):
         self._management_mode = False
         self._request_id += 1
-        self._loaded_quizzes = self._course_quizzes
-        self._loaded_folders = self._course_folders
-        self.management_term_filter.setVisible(False)
-        self.management_filter.setVisible(False)
-        self.batch_archive_btn.setVisible(False)
-        self.back_btn.setVisible(False)
-        self.unfinished_btn.setVisible(True)
-        self.refresh_btn.setVisible(True)
+        self.management_tree.clear()
+        self._quiz_checkboxes = {}
+
+    def _set_management_view(self, view_name):
+        self._management_view = view_name
+        self._update_management_view_text()
         self._populate_quiz_tree()
+
+    def _toggle_management_view(self):
+        self._set_management_view(
+            "archived"
+            if self._management_view == "unfinished"
+            else "unfinished"
+        )
+
+    def _update_management_view_text(self):
+        archived = self._management_view == "archived"
+        self.management_title_label.setText(self.ctx.tr(
+            "quiz_archived_list" if archived else "quiz_unfinished_tasks"
+        ))
+        self.management_toggle_btn.setText(self.ctx.tr(
+            "quiz_filter_unfinished" if archived else "quiz_filter_archived"
+        ))
+        self._update_batch_archive_button()
 
     @staticmethod
     def _term_prefix(course_name):
@@ -464,13 +530,15 @@ class QuizPage(QWidget):
         courses = self._courses_for_management_term(term)
         self._request_id += 1
         request_id = self._request_id
-        self._loaded_quizzes = []
-        self._loaded_folders = []
-        self.quiz_tree.clear()
-        self.status_label.setText(self.ctx.tr("quiz_term_loading"))
+        self._management_quizzes = []
+        self.management_tree.clear()
+        self.management_status_label.setText(
+            self.ctx.tr("quiz_term_loading")
+        )
         self.management_term_filter.setEnabled(False)
-        self.management_filter.setEnabled(False)
+        self.management_toggle_btn.setEnabled(False)
         self.batch_archive_btn.setEnabled(False)
+        self.management_refresh_btn.setEnabled(False)
         epoch = self.ctx.account_epoch
         threading.Thread(
             target=self._load_term_quizzes,
@@ -511,18 +579,18 @@ class QuizPage(QWidget):
         if term != str(self.management_term_filter.currentData() or ""):
             return
         self.management_term_filter.setEnabled(True)
-        self.management_filter.setEnabled(True)
-        self._loaded_quizzes = payload.get("quizzes", [])
-        self._loaded_folders = []
+        self.management_toggle_btn.setEnabled(True)
+        self.management_refresh_btn.setEnabled(True)
+        self._management_quizzes = payload.get("quizzes", [])
         self._populate_quiz_tree()
         if payload.get("errors"):
-            self.status_label.setText(self.ctx.tr(
+            self.management_status_label.setText(self.ctx.tr(
                 "quiz_term_partial_error",
                 payload["errors"],
                 payload.get("courses", 0),
             ))
         else:
-            self.status_label.clear()
+            self.management_status_label.clear()
 
     def _archive_checked(self):
         checked_items = {
@@ -537,7 +605,7 @@ class QuizPage(QWidget):
             archived = self.ctx.settings.get("ignored_quizzes", {})
         if not isinstance(archived, dict):
             archived = {}
-        restoring = self.management_filter.currentData() == "archived"
+        restoring = self._management_view == "archived"
         for course_id, quiz_id in checked_items:
             archived_ids = {
                 str(item) for item in archived.get(course_id, [])
@@ -556,9 +624,9 @@ class QuizPage(QWidget):
         self._populate_quiz_tree()
 
     def _update_batch_archive_button(self):
-        restoring = self.management_filter.currentData() == "archived"
+        restoring = self._management_view == "archived"
         self.batch_archive_btn.setText(self.ctx.tr(
-            "quiz_restore_selected" if restoring else "quiz_archive_selected"
+            "quiz_remove" if restoring else "quiz_archive"
         ))
         self.batch_archive_btn.setEnabled(
             any(checkbox.isChecked() for checkbox in self._quiz_checkboxes.values())
@@ -609,7 +677,7 @@ class QuizPage(QWidget):
             return str(value)
 
     def _set_name_and_url(
-        self, item, title, url, checkable=False, course_id=None
+        self, item, title, url, checkable=False, course_id=None, tree=None
     ):
         cell = QWidget()
         cell_layout = QHBoxLayout(cell)
@@ -641,7 +709,7 @@ class QuizPage(QWidget):
             link_label.setText(title)
         cell_layout.addWidget(link_label)
         cell_layout.addStretch(1)
-        self.quiz_tree.setItemWidget(item, 0, cell)
+        (tree or self.quiz_tree).setItemWidget(item, 0, cell)
 
     @staticmethod
     def _render_name_link(label):
@@ -657,6 +725,8 @@ class QuizPage(QWidget):
         )
 
     def _refresh_name_links(self):
-        for label in self.quiz_tree.findChildren(QLabel):
+        labels = self.quiz_tree.findChildren(QLabel)
+        labels += self.management_tree.findChildren(QLabel)
+        for label in labels:
             if label.property("name_link_url"):
                 self._render_name_link(label)
