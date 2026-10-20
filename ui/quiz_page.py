@@ -1,6 +1,7 @@
 """显示当前课程的 Blackboard 测验及其课时分类。"""
 
 import html
+import re
 import threading
 
 from PySide6.QtCore import Qt, QObject, Signal
@@ -10,6 +11,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QComboBox,
+    QCheckBox,
     QTreeWidget,
     QTreeWidgetItem,
     QHeaderView,
@@ -23,14 +26,26 @@ class _QuizLoadSignals(QObject):
     finished = Signal(str, object, int, int)
 
 
+class _TermQuizLoadSignals(QObject):
+    finished = Signal(str, object, int, int)
+
+
 class QuizPage(QWidget):
     def __init__(self, ctx):
         super().__init__()
         self.ctx = ctx
         self._has_loaded = False
         self._request_id = 0
+        self._loaded_quizzes = []
+        self._loaded_folders = []
+        self._course_quizzes = []
+        self._course_folders = []
+        self._management_mode = False
+        self._quiz_checkboxes = {}
         self._signals = _QuizLoadSignals(self)
         self._signals.finished.connect(self._on_quizzes_loaded)
+        self._term_signals = _TermQuizLoadSignals(self)
+        self._term_signals.finished.connect(self._on_term_quizzes_loaded)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -49,6 +64,43 @@ class QuizPage(QWidget):
         )
         toolbar.addWidget(self.status_label, 1)
 
+        self.management_term_filter = QComboBox()
+        self.management_term_filter.setFixedWidth(130)
+        self.management_term_filter.setVisible(False)
+        self.management_term_filter.currentIndexChanged.connect(
+            self._refresh_term_quizzes
+        )
+        toolbar.addWidget(self.management_term_filter)
+
+        self.management_filter = QComboBox()
+        self.management_filter.setFixedWidth(120)
+        self.management_filter.currentIndexChanged.connect(
+            self._populate_quiz_tree
+        )
+        self.management_filter.setVisible(False)
+        toolbar.addWidget(self.management_filter)
+
+        self.batch_archive_btn = QPushButton()
+        self.batch_archive_btn.setObjectName("secondary")
+        self.batch_archive_btn.setFixedSize(110, 34)
+        self.batch_archive_btn.setEnabled(False)
+        self.batch_archive_btn.setVisible(False)
+        self.batch_archive_btn.clicked.connect(self._archive_checked)
+        toolbar.addWidget(self.batch_archive_btn)
+
+        self.unfinished_btn = QPushButton()
+        self.unfinished_btn.setObjectName("secondary")
+        self.unfinished_btn.setFixedSize(120, 34)
+        self.unfinished_btn.clicked.connect(self._open_management)
+        toolbar.addWidget(self.unfinished_btn)
+
+        self.back_btn = QPushButton()
+        self.back_btn.setObjectName("secondary")
+        self.back_btn.setFixedSize(90, 34)
+        self.back_btn.setVisible(False)
+        self.back_btn.clicked.connect(self._close_management)
+        toolbar.addWidget(self.back_btn)
+
         self.refresh_btn = QPushButton()
         self.refresh_btn.setObjectName("secondary")
         self.refresh_btn.setFixedSize(110, 34)
@@ -57,7 +109,7 @@ class QuizPage(QWidget):
         layout.addWidget(self.toolbar_widget)
 
         self.quiz_tree = QTreeWidget()
-        self.quiz_tree.setColumnCount(4)
+        self.quiz_tree.setColumnCount(5)
         self.quiz_tree.setAlternatingRowColors(True)
         self.quiz_tree.setIndentation(22)
         self.quiz_tree.header().setStretchLastSection(False)
@@ -73,9 +125,13 @@ class QuizPage(QWidget):
         self.quiz_tree.header().setSectionResizeMode(
             3, QHeaderView.ResizeMode.Fixed
         )
-        self.quiz_tree.header().resizeSection(1, 110)
-        self.quiz_tree.header().resizeSection(2, 90)
+        self.quiz_tree.header().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.Fixed
+        )
+        self.quiz_tree.header().resizeSection(1, 145)
+        self.quiz_tree.header().resizeSection(2, 110)
         self.quiz_tree.header().resizeSection(3, 90)
+        self.quiz_tree.header().resizeSection(4, 90)
         self.tree_container = QWidget()
         tree_layout = QHBoxLayout(self.tree_container)
         tree_layout.setContentsMargins(9, 0, 9, 0)
@@ -98,17 +154,35 @@ class QuizPage(QWidget):
     def retranslate(self):
         self.refresh_btn.setText(self.ctx.tr("refresh"))
         self.empty_label.setText(self.ctx.tr("empty_state"))
+        selected_filter = self.management_filter.currentData()
+        self.management_filter.blockSignals(True)
+        self.management_filter.clear()
+        self.management_filter.addItem(
+            self.ctx.tr("quiz_filter_unfinished"), "unfinished"
+        )
+        self.management_filter.addItem(
+            self.ctx.tr("quiz_filter_archived"), "archived"
+        )
+        selected_index = self.management_filter.findData(
+            selected_filter or "unfinished"
+        )
+        self.management_filter.setCurrentIndex(max(selected_index, 0))
+        self.management_filter.blockSignals(False)
+        self.unfinished_btn.setText(self.ctx.tr("quiz_unfinished_tasks"))
+        self.back_btn.setText(self.ctx.tr("back"))
         self.quiz_tree.setHeaderLabels([
             self.ctx.tr("quiz_col_name"),
+            self.ctx.tr("quiz_col_due_date"),
             self.ctx.tr("quiz_col_attempts"),
             self.ctx.tr("quiz_col_points"),
             self.ctx.tr("col_type"),
         ])
         header_item = self.quiz_tree.headerItem()
-        for column in (1, 2, 3):
+        for column in (1, 2, 3, 4):
             header_item.setTextAlignment(
                 column, Qt.AlignmentFlag.AlignCenter
             )
+        self._update_batch_archive_button()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -175,8 +249,33 @@ class QuizPage(QWidget):
             )
             return
 
-        quiz_list = quizzes.get("quizzes", [])
-        folder_list = quizzes.get("folders", [])
+        self._loaded_quizzes = quizzes.get("quizzes", [])
+        self._loaded_folders = quizzes.get("folders", [])
+        self._course_quizzes = self._loaded_quizzes
+        self._course_folders = self._loaded_folders
+        self._populate_quiz_tree()
+        self.status_label.clear()
+
+    def _populate_quiz_tree(self, *_args):
+        self.quiz_tree.clear()
+        self._quiz_checkboxes = {}
+        filter_name = self.management_filter.currentData() or "unfinished"
+        if not self._management_mode:
+            quiz_list = [
+                quiz for quiz in self._loaded_quizzes
+                if not self._is_quiz_archived(quiz)
+            ]
+        elif filter_name == "archived":
+            quiz_list = [
+                quiz for quiz in self._loaded_quizzes
+                if self._is_quiz_archived(quiz)
+            ]
+        else:
+            quiz_list = [
+                quiz for quiz in self._loaded_quizzes
+                if not self._is_quiz_archived(quiz)
+                and self._is_unfinished(quiz)
+            ]
 
         lessons = {}
 
@@ -187,6 +286,7 @@ class QuizPage(QWidget):
             if lesson_name not in lessons:
                 lesson_item = QTreeWidgetItem([
                     lesson_name,
+                    "",
                     "",
                     "",
                     self.ctx.tr("type_lesson"),
@@ -203,15 +303,17 @@ class QuizPage(QWidget):
 
         # 只把课程目录下的第一层文件夹作为课时显示。
         # 更深层的“授業用資料について”等资料文件夹继续由文件下载页展示。
-        for folder in folder_list:
-            path = folder.get("path", [])
-            if len(path) == 1:
-                ensure_lesson(path)
+        if not self._management_mode:
+            for folder in self._loaded_folders:
+                path = folder.get("path", [])
+                if len(path) == 1:
+                    ensure_lesson(path)
 
         for quiz in quiz_list:
             parent = ensure_lesson(quiz.get("path", []))
             quiz_item = QTreeWidgetItem([
                 quiz.get("title") or self.ctx.tr("unnamed_quiz"),
+                quiz.get("due_date") or "—",
                 self._format_attempts(quiz),
                 self._format_points(quiz),
                 self.ctx.tr("quiz_type"),
@@ -229,6 +331,8 @@ class QuizPage(QWidget):
                 quiz_item,
                 quiz.get("title") or self.ctx.tr("unnamed_quiz"),
                 quiz.get("url", ""),
+                checkable=self._management_mode,
+                course_id=quiz.get("course_id"),
             )
 
         for lesson_name, lesson_item in lessons.items():
@@ -243,16 +347,228 @@ class QuizPage(QWidget):
                         "",
                         "",
                         "",
+                        "",
                     ])
                 )
             lesson_item.setExpanded(True)
+        self._update_batch_archive_button()
 
-        if quiz_list:
-            self.status_label.setText(
-                self.ctx.tr("quiz_scan_done", len(quiz_list))
+    def _archived_quiz_ids(self, course_id=None):
+        archived = self.ctx.settings.get("archived_quizzes")
+        if archived is None:
+            archived = self.ctx.settings.get("ignored_quizzes", {})
+        if not isinstance(archived, dict):
+            return set()
+        course_ids = archived.get(str(
+            course_id or self.ctx.current_course_id or ""
+        ), [])
+        if not isinstance(course_ids, list):
+            return set()
+        return {str(quiz_id) for quiz_id in course_ids}
+
+    def _is_quiz_archived(self, quiz):
+        course_id = quiz.get("course_id") or self.ctx.current_course_id
+        return str(quiz.get("id", "")) in self._archived_quiz_ids(course_id)
+
+    def _open_management(self):
+        self._management_mode = True
+        self.unfinished_btn.setVisible(False)
+        self.refresh_btn.setVisible(False)
+        self.management_term_filter.setVisible(True)
+        self.management_filter.setVisible(True)
+        self.batch_archive_btn.setVisible(True)
+        self.back_btn.setVisible(True)
+        self.management_filter.setCurrentIndex(0)
+        self._populate_term_options()
+
+    def _close_management(self):
+        self._management_mode = False
+        self._request_id += 1
+        self._loaded_quizzes = self._course_quizzes
+        self._loaded_folders = self._course_folders
+        self.management_term_filter.setVisible(False)
+        self.management_filter.setVisible(False)
+        self.batch_archive_btn.setVisible(False)
+        self.back_btn.setVisible(False)
+        self.unfinished_btn.setVisible(True)
+        self.refresh_btn.setVisible(True)
+        self._populate_quiz_tree()
+
+    @staticmethod
+    def _term_prefix(course_name):
+        match = re.match(
+            r"^\s*(\d{4}(?:年度)?\s*(?:前期|後期|后期))",
+            str(course_name),
+        )
+        return re.sub(r"\s+", "", match.group(1)) if match else None
+
+    @classmethod
+    def _display_course_name(cls, course_name):
+        if cls._term_prefix(course_name) is None:
+            return str(course_name)
+        return re.sub(
+            r"^\s*\d{4}(?:年度)?\s*(?:前期|後期|后期)\s*",
+            "",
+            str(course_name),
+        ).strip()
+
+    def _populate_term_options(self):
+        terms = {
+            term
+            for name in self.ctx.courses
+            if (term := self._term_prefix(name)) is not None
+        }
+        terms = sorted(
+            terms,
+            key=lambda term: (
+                int(re.search(r"\d{4}", term).group()),
+                2 if "後期" in term or "后期" in term else 1,
+            ),
+            reverse=True,
+        )
+        current_term = self._term_prefix(self.ctx.current_course_name)
+        self.management_term_filter.blockSignals(True)
+        self.management_term_filter.clear()
+        for term in terms:
+            self.management_term_filter.addItem(term, term)
+        if any(self._term_prefix(name) is None for name in self.ctx.courses):
+            self.management_term_filter.addItem(
+                self.ctx.tr("other_term"), "__other__"
             )
+        selected_index = self.management_term_filter.findData(current_term)
+        self.management_term_filter.setCurrentIndex(
+            selected_index if selected_index >= 0 else 0
+        )
+        self.management_term_filter.blockSignals(False)
+        self._refresh_term_quizzes()
+
+    def _courses_for_management_term(self, term):
+        courses = []
+        for name, course in self.ctx.courses.items():
+            matches = (
+                self._term_prefix(name) is None
+                if term == "__other__"
+                else self._term_prefix(name) == term
+            )
+            if not matches:
+                continue
+            course_id = course.get("id", "") if isinstance(course, dict) else course
+            if course_id:
+                courses.append((str(course_id), str(name)))
+        return courses
+
+    def _refresh_term_quizzes(self, *_args):
+        if not self._management_mode:
+            return
+        term = self.management_term_filter.currentData()
+        courses = self._courses_for_management_term(term)
+        self._request_id += 1
+        request_id = self._request_id
+        self._loaded_quizzes = []
+        self._loaded_folders = []
+        self.quiz_tree.clear()
+        self.status_label.setText(self.ctx.tr("quiz_term_loading"))
+        self.management_term_filter.setEnabled(False)
+        self.management_filter.setEnabled(False)
+        self.batch_archive_btn.setEnabled(False)
+        epoch = self.ctx.account_epoch
+        threading.Thread(
+            target=self._load_term_quizzes,
+            args=(str(term or ""), courses, request_id, epoch),
+            daemon=True,
+        ).start()
+
+    def _load_term_quizzes(self, term, courses, request_id, epoch):
+        combined = []
+        errors = 0
+        for course_id, course_name in courses:
+            try:
+                result = self.ctx.api.get_course_quizzes(
+                    course_id, include_folders=True
+                )
+            except Exception:
+                result = None
+            if not isinstance(result, dict):
+                errors += 1
+                continue
+            course_label = self._display_course_name(course_name)
+            for quiz in result.get("quizzes", []):
+                if not isinstance(quiz, dict):
+                    continue
+                quiz = dict(quiz)
+                quiz["course_id"] = course_id
+                quiz["course_name"] = course_name
+                quiz["path"] = [course_label] + list(quiz.get("path", []))
+                combined.append(quiz)
+        payload = {"quizzes": combined, "errors": errors, "courses": len(courses)}
+        self._term_signals.finished.emit(term, payload, request_id, epoch)
+
+    def _on_term_quizzes_loaded(self, term, payload, request_id, epoch):
+        if request_id != self._request_id or epoch != self.ctx.account_epoch:
+            return
+        if not self._management_mode:
+            return
+        if term != str(self.management_term_filter.currentData() or ""):
+            return
+        self.management_term_filter.setEnabled(True)
+        self.management_filter.setEnabled(True)
+        self._loaded_quizzes = payload.get("quizzes", [])
+        self._loaded_folders = []
+        self._populate_quiz_tree()
+        if payload.get("errors"):
+            self.status_label.setText(self.ctx.tr(
+                "quiz_term_partial_error",
+                payload["errors"],
+                payload.get("courses", 0),
+            ))
         else:
-            self.status_label.setText(self.ctx.tr("quiz_scan_empty"))
+            self.status_label.clear()
+
+    def _archive_checked(self):
+        checked_items = {
+            key for key, checkbox in self._quiz_checkboxes.items()
+            if checkbox.isChecked()
+        }
+        if not checked_items:
+            return
+
+        archived = self.ctx.settings.get("archived_quizzes")
+        if archived is None:
+            archived = self.ctx.settings.get("ignored_quizzes", {})
+        if not isinstance(archived, dict):
+            archived = {}
+        restoring = self.management_filter.currentData() == "archived"
+        for course_id, quiz_id in checked_items:
+            archived_ids = {
+                str(item) for item in archived.get(course_id, [])
+            }
+            if restoring:
+                archived_ids.discard(quiz_id)
+            else:
+                archived_ids.add(quiz_id)
+            if archived_ids:
+                archived[course_id] = sorted(archived_ids)
+            else:
+                archived.pop(course_id, None)
+        self.ctx.settings.set("archived_quizzes", archived)
+        self.ctx.settings.remove("ignored_quizzes")
+        self.ctx.settings.save()
+        self._populate_quiz_tree()
+
+    def _update_batch_archive_button(self):
+        restoring = self.management_filter.currentData() == "archived"
+        self.batch_archive_btn.setText(self.ctx.tr(
+            "quiz_restore_selected" if restoring else "quiz_archive_selected"
+        ))
+        self.batch_archive_btn.setEnabled(
+            any(checkbox.isChecked() for checkbox in self._quiz_checkboxes.values())
+        )
+
+    @staticmethod
+    def _is_unfinished(quiz):
+        if quiz.get("points_display") == "completion":
+            return quiz.get("completion_recorded") is not True
+        return quiz.get("points_earned") is None
 
     def _format_attempts(self, quiz):
         if not quiz.get("attempts_known"):
@@ -267,7 +583,7 @@ class QuizPage(QWidget):
 
     @staticmethod
     def _center_result_columns(item):
-        for column in (1, 2, 3):
+        for column in (1, 2, 3, 4):
             item.setTextAlignment(column, Qt.AlignmentFlag.AlignCenter)
 
     def _format_points(self, quiz):
@@ -292,7 +608,23 @@ class QuizPage(QWidget):
         except (TypeError, ValueError):
             return str(value)
 
-    def _set_name_and_url(self, item, title, url):
+    def _set_name_and_url(
+        self, item, title, url, checkable=False, course_id=None
+    ):
+        cell = QWidget()
+        cell_layout = QHBoxLayout(cell)
+        cell_layout.setContentsMargins(0, 0, 0, 0)
+        cell_layout.setSpacing(8)
+        if checkable:
+            checkbox = QCheckBox()
+            quiz_id = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
+            course_id = str(
+                course_id or self.ctx.current_course_id or ""
+            )
+            checkbox.stateChanged.connect(self._update_batch_archive_button)
+            self._quiz_checkboxes[(course_id, quiz_id)] = checkbox
+            cell_layout.addWidget(checkbox)
+
         link_label = QLabel()
         if url:
             link_label.setTextFormat(Qt.TextFormat.RichText)
@@ -307,7 +639,9 @@ class QuizPage(QWidget):
         else:
             link_label.setTextFormat(Qt.TextFormat.PlainText)
             link_label.setText(title)
-        self.quiz_tree.setItemWidget(item, 0, link_label)
+        cell_layout.addWidget(link_label)
+        cell_layout.addStretch(1)
+        self.quiz_tree.setItemWidget(item, 0, cell)
 
     @staticmethod
     def _render_name_link(label):
