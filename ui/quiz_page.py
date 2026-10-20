@@ -121,6 +121,7 @@ class QuizPage(QWidget):
         self._build_management_dialog()
 
         self.ctx.signals.course_changed.connect(self.on_course_changed)
+        self.ctx.signals.term_changed.connect(self._on_term_changed)
         self.ctx.signals.login_state.connect(self._on_login_state)
         self.ctx.signals.theme_changed.connect(self._refresh_name_links)
         self.retranslate()
@@ -254,8 +255,16 @@ class QuizPage(QWidget):
     def on_course_changed(self, _course_id, _course_name):
         self.refresh_quizzes()
 
+    def _on_term_changed(self, _term):
+        if not self.ctx.current_course_id:
+            self._set_idle_state(True)
+
     def _set_idle_state(self, idle):
-        self.toolbar_widget.setVisible(not idle)
+        term_selected = bool(self.ctx.current_term)
+        self.toolbar_widget.setVisible(not idle or term_selected)
+        self.status_label.setVisible(not idle)
+        self.unfinished_btn.setVisible(not idle or term_selected)
+        self.refresh_btn.setVisible(not idle)
         self.tree_container.setVisible(not idle)
         self.empty_label.setVisible(idle)
 
@@ -519,7 +528,10 @@ class QuizPage(QWidget):
             ),
             reverse=True,
         )
-        current_term = self._term_prefix(self.ctx.current_course_name)
+        current_term = (
+            self._term_prefix(self.ctx.current_course_name)
+            or self.ctx.current_term
+        )
         self.management_term_filter.blockSignals(True)
         self.management_term_filter.clear()
         for term in terms:

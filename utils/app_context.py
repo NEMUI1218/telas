@@ -14,6 +14,7 @@ class AppContext:
         self.api = BlackboardAPI(log_cb=self.log)
         self.downloader = DownloadService(self.api)
         self.courses = {}
+        self.current_term = ""
         self.current_course_id = ""
         self.current_course_name = ""
         # 每切换一次账号加 1。后台线程开始时记下它，回来时不一致就说明

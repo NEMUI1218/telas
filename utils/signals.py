@@ -22,6 +22,7 @@ class SignalBus(QObject):
     login_state = Signal(bool)
     login_busy = Signal(bool)
     account_info = Signal(str, str)  # (姓名, 学籍番号)；登录后显示在顶栏，姓名没取到时是空串
+    term_changed = Signal(str)  # 顶栏当前选择的学期；空字符串表示未指定或全部
     course_changed = Signal(str, str)  # (course_id, course_name)
     language_changed = Signal()
     theme_changed = Signal()  # 主题切换后发出；用 QPainter 画的图标要跟着重画

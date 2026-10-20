@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QMenu,
 )
 
+from utils.theme import current_theme
+
 
 class ElidedLabel(QLabel):
     """显示账号姓名与学号，空间不足时省略，悬停显示完整内容。"""
@@ -93,6 +95,9 @@ class Header(QWidget):
         self._build_ui()
 
         self.courses_loaded.connect(self._populate_courses)
+        self.ctx.signals.theme_changed.connect(
+            self._update_badge_text
+        )
 
         self.retranslate()
 
@@ -310,18 +315,29 @@ class Header(QWidget):
         self.status_badge.setProperty("state", state)
 
         if self._logged_in:
-
-            background = "#103D2B"
-            foreground = "#34D399"
-            hover = "#185239"
-            pressed = "#0B3021"
+            if current_theme() == "light":
+                # 浅色主题使用通透的绿色提示，避免深色徽章显得突兀。
+                background = "rgba(26, 127, 69, 38)"
+                foreground = "#176B3A"
+                hover = "rgba(26, 127, 69, 52)"
+                pressed = "rgba(26, 127, 69, 68)"
+            else:
+                background = "#103D2B"
+                foreground = "#34D399"
+                hover = "#185239"
+                pressed = "#0B3021"
 
         else:
-
-            background = "#451F25"
-            foreground = "#FB7185"
-            hover = "#592830"
-            pressed = "#35171C"
+            if current_theme() == "light":
+                background = "rgba(209, 52, 63, 34)"
+                foreground = "#B4232F"
+                hover = "rgba(209, 52, 63, 48)"
+                pressed = "rgba(209, 52, 63, 64)"
+            else:
+                background = "#451F25"
+                foreground = "#FB7185"
+                hover = "#592830"
+                pressed = "#35171C"
 
         self.status_badge.setStyleSheet(
             f"""
@@ -627,8 +643,8 @@ class Header(QWidget):
         self.course_cb.blockSignals(False)
 
         self.prefix_cb.addItem(
-            self.tr("all_terms"),
-            "",
+            self.tr("placeholder_term"),
+            "__unset__",
         )
 
         self.course_cb.addItem(
@@ -637,6 +653,8 @@ class Header(QWidget):
         )
 
         self.course_selected.emit("", "")
+        self.ctx.current_term = ""
+        self.ctx.signals.term_changed.emit("")
 
     # =========================================================
     # 课程
@@ -711,6 +729,11 @@ class Header(QWidget):
         self.prefix_cb.clear()
 
         self.prefix_cb.addItem(
+            self.tr("placeholder_term"),
+            "__unset__",
+        )
+
+        self.prefix_cb.addItem(
             self.tr("all_terms"),
             "",
         )
@@ -727,22 +750,21 @@ class Header(QWidget):
                 "__other__",
             )
 
-        self.prefix_cb.setCurrentIndex(
-            1 if terms else 0
-        )
+        self.prefix_cb.setCurrentIndex(0)
 
         self.prefix_cb.blockSignals(False)
 
-        self._rebuild_course_options()
+        self._on_prefix_changed(0)
 
     def _rebuild_course_options(self):
 
-        term = (
-            self.prefix_cb.currentData()
-            or ""
-        )
+        term = self.prefix_cb.currentData()
 
-        if term == "__other__":
+        if term == "__unset__":
+
+            names = []
+
+        elif term == "__other__":
 
             names = [
                 name
@@ -798,7 +820,10 @@ class Header(QWidget):
             self.course_selected.emit("", "")
 
     def _on_prefix_changed(self, _index):
-
+        term = self.prefix_cb.currentData()
+        selected_term = "" if term in (None, "", "__unset__") else str(term)
+        self.ctx.current_term = selected_term
+        self.ctx.signals.term_changed.emit(selected_term)
         self._rebuild_course_options()
 
     def _on_course_index_changed(self, *_):
@@ -850,17 +875,21 @@ class Header(QWidget):
 
         if self.prefix_cb.count():
 
-            self.prefix_cb.setItemText(
-                0,
-                self.tr("all_terms"),
-            )
+            for index in range(self.prefix_cb.count()):
 
-            for index in range(
-                1,
-                self.prefix_cb.count(),
-            ):
+                if self.prefix_cb.itemData(index) == "__unset__":
+                    self.prefix_cb.setItemText(
+                        index,
+                        self.tr("placeholder_term"),
+                    )
 
-                if (
+                elif self.prefix_cb.itemData(index) == "":
+                    self.prefix_cb.setItemText(
+                        index,
+                        self.tr("all_terms"),
+                    )
+
+                elif (
                     self.prefix_cb.itemData(index)
                     == "__other__"
                 ):
