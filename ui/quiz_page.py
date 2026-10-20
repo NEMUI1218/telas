@@ -42,6 +42,7 @@ class QuizPage(QWidget):
         self._course_quizzes = []
         self._course_folders = []
         self._management_quizzes = []
+        self._management_courses = []
         self._management_mode = False
         self._management_view = "unfinished"
         self._quiz_checkboxes = {}
@@ -133,6 +134,7 @@ class QuizPage(QWidget):
             self.ctx.tr("quiz_unfinished_tasks")
         )
         self.management_refresh_btn.setText(self.ctx.tr("refresh"))
+        self.management_back_btn.setText(self.ctx.tr("back"))
         self.quiz_tree.setHeaderLabels([
             self.ctx.tr("quiz_col_name"),
             self.ctx.tr("quiz_col_due_date"),
@@ -168,22 +170,23 @@ class QuizPage(QWidget):
         )
 
         dialog_layout = QVBoxLayout(self.management_dialog)
-        dialog_layout.setContentsMargins(12, 12, 12, 12)
+        dialog_layout.setContentsMargins(9, 9, 9, 9)
         dialog_layout.setSpacing(10)
-
-        controls = QHBoxLayout()
-        controls.setSpacing(8)
 
         self.management_title_label = QLabel()
         title_font = self.management_title_label.font()
         title_font.setPointSize(title_font.pointSize() + 3)
         title_font.setBold(True)
         self.management_title_label.setFont(title_font)
-        controls.addWidget(self.management_title_label)
-        controls.addSpacing(12)
+        dialog_layout.addWidget(self.management_title_label)
+
+        controls = QHBoxLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(8)
 
         self.management_term_filter = QComboBox()
         self.management_term_filter.setFixedWidth(140)
+        self.management_term_filter.setFixedHeight(34)
         self.management_term_filter.currentIndexChanged.connect(
             self._refresh_term_quizzes
         )
@@ -191,6 +194,7 @@ class QuizPage(QWidget):
 
         self.management_toggle_btn = QPushButton()
         self.management_toggle_btn.setObjectName("secondary")
+        self.management_toggle_btn.setFixedSize(110, 34)
         self.management_toggle_btn.clicked.connect(
             self._toggle_management_view
         )
@@ -198,16 +202,26 @@ class QuizPage(QWidget):
         controls.addStretch(1)
 
         self.batch_archive_btn = QPushButton()
+        self.batch_archive_btn.setFixedSize(110, 34)
         self.batch_archive_btn.setEnabled(False)
         self.batch_archive_btn.clicked.connect(self._archive_checked)
         controls.addWidget(self.batch_archive_btn)
 
         self.management_refresh_btn = QPushButton()
         self.management_refresh_btn.setObjectName("secondary")
+        self.management_refresh_btn.setFixedSize(110, 34)
         self.management_refresh_btn.clicked.connect(
             self._refresh_term_quizzes
         )
         controls.addWidget(self.management_refresh_btn)
+
+        self.management_back_btn = QPushButton()
+        self.management_back_btn.setObjectName("secondary")
+        self.management_back_btn.setFixedSize(110, 34)
+        self.management_back_btn.clicked.connect(
+            self.management_dialog.reject
+        )
+        controls.addWidget(self.management_back_btn)
         dialog_layout.addLayout(controls)
 
         self.management_status_label = QLabel()
@@ -351,6 +365,10 @@ class QuizPage(QWidget):
                 lessons[lesson_name] = lesson_item
             return lessons[lesson_name]
 
+        if self._management_mode:
+            for course in self._management_courses:
+                ensure_lesson([course["label"]])
+
         # 只把课程目录下的第一层文件夹作为课时显示。
         # 更深层的“授業用資料について”等资料文件夹继续由文件下载页展示。
         if not self._management_mode:
@@ -394,14 +412,23 @@ class QuizPage(QWidget):
             if not has_quiz:
                 lesson_item.addChild(
                     QTreeWidgetItem([
-                        self.ctx.tr("no_quiz_for_lesson"),
+                        self.ctx.tr(
+                            "no_archived_for_course"
+                            if self._management_mode
+                            and filter_name == "archived"
+                            else "no_unfinished_for_course"
+                            if self._management_mode
+                            else "no_quiz_for_lesson"
+                        ),
                         "",
                         "",
                         "",
                         "",
                     ])
                 )
-            lesson_item.setExpanded(True)
+            lesson_item.setExpanded(
+                has_quiz if self._management_mode else True
+            )
         self._update_batch_archive_button()
 
     def _archived_quiz_ids(self, course_id=None):
@@ -548,8 +575,15 @@ class QuizPage(QWidget):
 
     def _load_term_quizzes(self, term, courses, request_id, epoch):
         combined = []
+        course_items = []
         errors = 0
         for course_id, course_name in courses:
+            course_label = self._display_course_name(course_name)
+            course_items.append({
+                "id": course_id,
+                "name": course_name,
+                "label": course_label,
+            })
             try:
                 result = self.ctx.api.get_course_quizzes(
                     course_id, include_folders=True
@@ -559,7 +593,6 @@ class QuizPage(QWidget):
             if not isinstance(result, dict):
                 errors += 1
                 continue
-            course_label = self._display_course_name(course_name)
             for quiz in result.get("quizzes", []):
                 if not isinstance(quiz, dict):
                     continue
@@ -568,7 +601,12 @@ class QuizPage(QWidget):
                 quiz["course_name"] = course_name
                 quiz["path"] = [course_label] + list(quiz.get("path", []))
                 combined.append(quiz)
-        payload = {"quizzes": combined, "errors": errors, "courses": len(courses)}
+        payload = {
+            "quizzes": combined,
+            "course_items": course_items,
+            "errors": errors,
+            "courses": len(courses),
+        }
         self._term_signals.finished.emit(term, payload, request_id, epoch)
 
     def _on_term_quizzes_loaded(self, term, payload, request_id, epoch):
@@ -582,6 +620,7 @@ class QuizPage(QWidget):
         self.management_toggle_btn.setEnabled(True)
         self.management_refresh_btn.setEnabled(True)
         self._management_quizzes = payload.get("quizzes", [])
+        self._management_courses = payload.get("course_items", [])
         self._populate_quiz_tree()
         if payload.get("errors"):
             self.management_status_label.setText(self.ctx.tr(
